@@ -14,7 +14,7 @@ Goal: a green, evidence-backed verification of the production deployment. Never 
 4. Read the subagent's report against these pass criteria:
    - `GET /api/status` returns 200 JSON with `tier`, `breaker`, `pools`, `jev.budget`, `jev.last`.
    - Every `/api/protected` response has `x-tier`, `x-breaker`, `x-decider`, `x-priority`, `x-hedge`, `x-ratelimit-remaining`.
-   - e2e scenarios all pass: burst → 429 + retry-after and tier climbs one step per window; `fail=1` → breaker open with fail-fast < 100 ms, then recovery walks down one step per window; batch job preempts within one chunk under a critical burst and resumes from its cursor; hedging fires only under the four gates; `jev=off` yields `x-decider: deterministic` with scenarios still passing.
+   - e2e scenarios all pass: burst → 429 + retry-after and tier climbs one step per window; `fail=1` → breaker open; an open breaker answers 503 circuit-open in well under the requested 2 s upstream latency (measured ~300-450 ms including Blobs reads) without calling upstream, then recovery walks down one step per window; batch job preempts within one chunk under a critical burst and resumes from its cursor; hedging fires only under the four gates; `jev=off` yields `x-decider: deterministic` with scenarios still passing.
    - `x-decider` is `jev` on at least one response when Jev is reachable. If it is never `jev`, report that the AI Gateway is not active (first prod deploy may be needed) and that the deterministic path is what was verified.
 5. If any criterion fails: fix, re-run tests, redeploy, and repeat from step 3. Stop only when all pass or a blocker outside the repo is identified.
 6. Final report: URL, commit SHA, pass/fail per criterion, anything skipped and why.

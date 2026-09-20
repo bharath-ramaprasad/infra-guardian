@@ -20,7 +20,7 @@ flowchart TB
   WAIT["Wait and retry<br/>critical 0 ms · standard 500 ms · bulk 1500 ms<br/>budget is probability-weighted"]
   EXP{Budget exhausted?}
   REJ([429 + Retry-After<br/>503 shed at tier ≥ 3<br/>x-wait-ms, x-ratelimit-reason])
-  HEDGE["Hedge gates, see section 2<br/>tier ≤ 1 · pool ≥ 2 · idempotent · safeToRetry ≥ 0.9"]
+  HEDGE["Hedge gates, see section 2<br/>tier ≤ 1 · pool ≥ 2 · idempotent · safeToRetry ≥ 0.7"]
   UP["Simulated upstream<br/>timeout 2 s, abortable"]
   REC["Record outcome<br/>telemetry ring, client history<br/>CAS ≤ 3 retries"]
   OUT([200 or 502 with headers<br/>x-tier x-breaker x-decider x-priority<br/>x-wait-ms x-hedge x-ratelimit-remaining])
@@ -41,7 +41,7 @@ The first response wins, the loser is aborted, and the simulated upstream honour
 
 ```mermaid
 flowchart LR
-  GATES{All four gates pass?<br/>tier ≤ 1 · critical pool ≥ 2<br/>GET or Idempotency-Key · safeToRetry ≥ 0.9}
+  GATES{All four gates pass?<br/>tier ≤ 1 · critical pool ≥ 2<br/>GET or Idempotency-Key · safeToRetry ≥ 0.7}
   SINGLE([Single call<br/>x-hedge: gated-reason])
   C1["Copy 1<br/>consume 1 token"]
   TIMER["Wait min p50, 2 s<br/>floor 50 ms"]
@@ -73,7 +73,7 @@ flowchart TB
   LOAD["Strong read job/id with etag<br/>and tier snapshot"]
   ST{state is RUNNING<br/>or resumable?}
   PARK([Return progress unchanged<br/>x-job: preempted or queued])
-  CHK{Preempt check before chunk:<br/>tier ≥ 2 · critical pool empty<br/>· yield within 2 s}
+  CHK{Preempt check before chunk:<br/>tier ≥ 2 · critical pool under its 25% reserve<br/>· yield within 2 s}
   PRE([Save cursor, state = PREEMPTED<br/>CAS write, x-job: preempted])
   TOK["Take 1 bulk token<br/>chunksPerSec by tier"]
   CHUNK["Process one chunk via upstream<br/>≤ 200 ms"]
@@ -107,6 +107,7 @@ flowchart LR
   CLI[("session/client/hash<br/>bucket · history 20<br/>cachedPriority · cachedAt")]
   JOB[("session/job/id<br/>items · cursor · state · deferability<br/>submittedAt · resumeAfter · resumes")]
   IDX[("session/jobs/index<br/>job ids for the status page")]
+  YLD[("session/yield<br/>at: last critical pressure<br/>plain write, no CAS")]
 
   REQ -->|telemetry, pools, yield, CAS| SVC
   REQ -->|bucket, history, CAS| CLI
@@ -115,7 +116,12 @@ flowchart LR
   EVAL -->|tier, breaker, budget, CAS| SVC
   SUB --> JOB
   SUB --> IDX
+  REQ -->|critical could not be admitted promptly| YLD
+  YLD -.->|merged before every preempt check| STEP
 ```
+
+The yield flag has its own key on purpose: under a burst the main state key is contended, and a critical request that loses the
+admission race is exactly the signal batch work must not miss. A plain last-writer-wins write cannot be starved.
 
 ## 5. Response header contract
 

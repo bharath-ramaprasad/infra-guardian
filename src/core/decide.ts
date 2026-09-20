@@ -2,7 +2,7 @@ import { advanceBreaker, cooldownRemainingMs, tryAdmitProbe } from "./breaker";
 import { hedgeDecision, type HedgeDecision } from "./hedge";
 import { hasCapacity, refillPools, takeTokens } from "./pools";
 import { summarize } from "./telemetry";
-import { WAIT_BUDGET_MS, WINDOW_MS, type ClassCacheEntry, type Priority, type ServiceState } from "./types";
+import { CRITICAL_RESERVE_SHARE, WAIT_BUDGET_MS, WINDOW_MS, poolCapacity, type ClassCacheEntry, type Priority, type ServiceState } from "./types";
 
 // One admission attempt for an interactive request. Waiting between attempts is the caller's job (it is I/O).
 
@@ -61,7 +61,10 @@ export function decideAdmission(i: AdmissionInput): Admission {
     p50Ms,
     enabled: i.hedgeEnabled,
   });
-  return { kind: "admit", from: take.from ?? cls.priority, hedge, state: { ...state, pools: take.pools } };
+  // A critical request that eats into the critical reserve is pressure: raise the yield flag so batch work steps aside.
+  const reserve = Math.max(1, poolCapacity(state.tier, "critical") * CRITICAL_RESERVE_SHARE);
+  const yieldRequestedAt = cls.priority === "critical" && take.pools.critical < reserve ? now : state.yieldRequestedAt;
+  return { kind: "admit", from: take.from ?? cls.priority, hedge, state: { ...state, pools: take.pools, yieldRequestedAt } };
 }
 
 /** Probability-weighted wait budget. Low-confidence classifications already collapsed to standard upstream. */

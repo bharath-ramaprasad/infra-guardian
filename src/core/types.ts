@@ -26,14 +26,16 @@ export const TIERS: Readonly<Record<Tier, TierSpec>> = {
 };
 
 export const WINDOW_MS = 5_000;
-export const YIELD_TTL_MS = 2_000;
+export const YIELD_TTL_MS = 3_000;
+/** Critical pool below this share of its capacity counts as pressure: batch yields and the yield flag is raised. */
+export const CRITICAL_RESERVE_SHARE = 0.25;
 export const WAIT_BUDGET_MS: Readonly<Record<Priority, number>> = { critical: 0, standard: 500, bulk: 1500 };
 export const CONFIDENCE_GENERAL = 0.6;
-export const CONFIDENCE_SAFE_TO_RETRY = 0.9;
+export const CONFIDENCE_SAFE_TO_RETRY = 0.7;
 export const THRESHOLDS = { errorRate: 0.5, minSamples: 10, p95Ms: 1500, p95MinSamples: 5, timeouts: 5, cleanWindowsToRecover: 2 } as const;
 export const BREAKER_CFG = { initialCooldownMs: 10_000, maxCooldownMs: 60_000, probeTimeoutMs: 5_000 } as const;
 export const BATCH_CFG = { chunkMs: 200, stepBudgetMs: 3_000, agingMs: 10_000, resumeStaggerMaxMs: 500, maxItems: 5_000, chunkSize: 5 } as const;
-export const JEV_BUDGET = { perMinute: 30, perDay: 2_000, errorsToOpen: 3, openMs: 30_000, timeoutMs: 400, classCacheMs: 60_000, classCacheMax: 32 } as const;
+export const JEV_BUDGET = { perMinute: 60, perDay: 3_000, errorsToOpen: 3, openMs: 30_000, timeoutMs: 800, classCacheMs: 60_000, classCacheMax: 32 } as const;
 export const UPSTREAM_CFG = { timeoutMs: 2_000, maxLatencyMs: 2_000, tailMultiplier: 5 } as const;
 export const TELEMETRY_RING = 50;
 
@@ -70,6 +72,7 @@ export interface JevState {
   readonly openUntil: number | null;
   readonly totalCalls: number;
   readonly last: JevLast | null;
+  readonly lastError: { readonly at: number; readonly message: string; readonly latencyMs: number } | null;
 }
 
 export interface JevLast {
@@ -81,6 +84,7 @@ export interface JevLast {
 }
 
 export interface ClassCacheEntry {
+  readonly pending?: boolean;
   readonly priority: Priority;
   readonly probabilities: Readonly<Record<Priority, number>>;
   readonly confidence: number;
@@ -154,7 +158,7 @@ export function initialState(now: number): ServiceState {
     window: Math.floor(now / WINDOW_MS),
     cleanWindows: 0,
     yieldRequestedAt: null,
-    jev: { off: false, minuteBucket: 0, minuteCount: 0, dayBucket: 0, dayCount: 0, consecutiveErrors: 0, openUntil: null, totalCalls: 0, last: null },
+    jev: { off: false, minuteBucket: 0, minuteCount: 0, dayBucket: 0, dayCount: 0, consecutiveErrors: 0, openUntil: null, totalCalls: 0, last: null, lastError: null },
     classCache: {},
     decider: "deterministic",
     lastStress: null,

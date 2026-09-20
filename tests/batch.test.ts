@@ -22,7 +22,9 @@ describe("invariant 4: cooperative preemption at chunk boundaries", () => {
     const job = markRunning(createJob("j2", "export", 100, t0), t0, false);
     expect(admission(job, { ...calm, yieldRequestedAt: t0 - 500 }, t0).reason).toBe("yield");
     expect(admission(job, { ...calm, yieldRequestedAt: t0 - 5_000 }, t0).run).toBe(true);
-    expect(admission(job, { ...calm, pools: { ...calm.pools, critical: 0.5 } }, t0).reason).toBe("critical-pool-empty");
+    expect(admission(job, { ...calm, pools: { ...calm.pools, critical: 0.5 } }, t0).reason).toBe("critical-reserve");
+    expect(admission(job, { ...calm, pools: { ...calm.pools, critical: 4.9 } }, t0).reason).toBe("critical-reserve");
+    expect(admission(job, { ...calm, pools: { ...calm.pools, critical: 5 } }, t0).run).toBe(true);
   });
 
   it("resumes only after a full calm window and the stagger, from the saved cursor", () => {

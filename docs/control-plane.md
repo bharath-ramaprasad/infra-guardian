@@ -27,7 +27,7 @@ flowchart LR
   end
 
   subgraph ORACLE["Policy oracle"]
-    GUARD["Jev budget guard<br/>30/min, 2000/day<br/>3 errors → skip 30 s"]
+    GUARD["Jev budget guard<br/>60/min, 3000/day<br/>3 errors → skip 30 s"]
     JEV["TypeSafe Jev via Netlify AI Gateway<br/>stress · priority · deferability · safeToRetry"]
   end
 
@@ -91,7 +91,7 @@ flowchart TB
   SKIP([Another caller already evaluated: use theirs])
   DET["Deterministic tier from telemetry ring"]
   BUD{Jev budget and inner breaker OK?}
-  CALL["Jev systemOne: stress<br/>400 ms timeout"]
+  CALL["Jev systemOne: stress<br/>800 ms timeout"]
   CONF{confidence ≥ 0.6?}
   MERGE["proposal = max(det, jevTier)"]
   CLAMP["tier = clamp(proposal, cur−1, cur+1)"]
@@ -125,11 +125,11 @@ flowchart TB
   NEED([Decision needed:<br/>priority · stress · deferability · safeToRetry])
   OFF{Session flag jev=off?}
   CACHE{Cached answer fresh?<br/>priority 60 s per client · stress 5 s}
-  BUD{Budget under 30/min and 2000/day?}
+  BUD{Budget under 60/min and 3000/day?}
   IBRK{Inner breaker closed?<br/>3 consecutive errors open it 30 s}
-  CALL["systemOne with 400 ms timeout"]
+  CALL["systemOne with 800 ms timeout"]
   OK{Answer received?}
-  CONF{confidence ≥ threshold?<br/>0.6 general · 0.9 safeToRetry}
+  CONF{confidence ≥ threshold?<br/>0.6 general · 0.7 safeToRetry}
   USE([Use Jev answer<br/>x-decider: jev])
   D1([Deterministic default<br/>x-decider: deterministic])
   D2([x-decider: jev-bypassed-budget])
@@ -165,7 +165,7 @@ stateDiagram-v2
 
   [*] --> QUEUED
   QUEUED --> RUNNING: tier ≤ 1 and no yield in 2 s
-  RUNNING --> PREEMPTED: before any chunk, if tier ≥ 2 or critical pool empty or yield within 2 s
+  RUNNING --> PREEMPTED: before any chunk, if tier ≥ 2 or critical pool under its 25% reserve or yield within 2 s
   PREEMPTED --> RUNNING: tier ≤ 1 for a full window and no yield 2 s, lowest deferability first, 0–500 ms stagger
   PREEMPTED --> RUNNING: aging guard, 1 chunk per 10 s unless tier is 4
   RUNNING --> DONE: cursor = items

@@ -18,7 +18,7 @@ describe("invariant 3: hedging needs all four gates", () => {
     expect(hedgeDecision({ ...base, tier: 2, pools: fullPools(2, 0) }).gate).toBe("tier");
     expect(hedgeDecision({ ...base, pools: { ...base.pools, critical: 1.5 } }).gate).toBe("pool");
     expect(hedgeDecision({ ...base, idempotent: false }).gate).toBe("idempotency");
-    expect(hedgeDecision({ ...base, safeToRetry: 0.89 }).gate).toBe("safeToRetry");
+    expect(hedgeDecision({ ...base, safeToRetry: 0.69 }).gate).toBe("safeToRetry");
     expect(hedgeDecision({ ...base, enabled: false }).gate).toBe("off");
   });
 

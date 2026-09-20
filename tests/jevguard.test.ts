@@ -9,9 +9,9 @@ describe("Jev budget guard and inner breaker", () => {
     expect(jevGate({ ...j, off: true }, now).tag).toBe("deterministic");
   });
 
-  it("stops at 30 calls per minute and resets on the next minute", () => {
+  it("stops at 60 calls per minute and resets on the next minute", () => {
     let j = initialState(now).jev;
-    for (let i = 0; i < 30; i++) j = noteJevCall(j, now);
+    for (let i = 0; i < 60; i++) j = noteJevCall(j, now);
     expect(jevGate(j, now).tag).toBe("jev-bypassed-budget");
     expect(jevGate(j, now + 60_000).ok).toBe(true);
   });

@@ -38,6 +38,15 @@ describe("admission decisions", () => {
     expect(b.state.yieldRequestedAt).toBeNull();
   });
 
+  it("raises the yield flag when a critical admission dips into the reserve", () => {
+    const low: ServiceState = { ...initialState(now), pools: { critical: 5.5, standard: 20, bulk: 10, refilledAt: now } };
+    const r = decideAdmission({ state: low, now, cls: critical, idempotent: true, hedgeEnabled: true });
+    expect(r.kind).toBe("admit");
+    expect(r.state.yieldRequestedAt).toBe(now);
+    const fine = decideAdmission({ state: initialState(now), now, cls: critical, idempotent: true, hedgeEnabled: true });
+    expect(fine.state.yieldRequestedAt).toBeNull();
+  });
+
   it("admits with a hedge only for idempotent critical requests", () => {
     const s = initialState(now);
     const a = decideAdmission({ state: s, now, cls: critical, idempotent: true, hedgeEnabled: true });

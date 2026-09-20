@@ -34,20 +34,22 @@ one probe; success → tier 3 and walk down, failure → OPEN.
   Critical requests arriving during a wait take tokens first. Budget exhausted → 429 with Retry-After.
 - Jev choice `priority` gives probabilities; wait budget = probability-weighted mean of the class budgets.
   Confidence < 0.6 → treated as standard (never promoted to critical by uncertainty).
-- A critical request that finds its pool empty sets `svc.yieldRequestedAt = now`. This is the preemption signal for batch.
+- A critical request that cannot be admitted promptly (pool empty, dipped under the 25% critical reserve, or lost the
+  admission CAS race) raises the yield flag. It is stored on its own key (`s/<sid>/yield`, plain write) so contention on the
+  main state key cannot hide it. This is the preemption signal for batch.
 
 ### 2.3 Batch path: cooperative preemption at checkpoints
 Job record `job/<id>`: `{ items, cursor, state, deferability, submittedAt, resumeAfter, history[] }`.
 States: QUEUED → RUNNING ⇄ PREEMPTED → DONE | CANCELLED.
 - Step = process up to `chunksPerSec × 3` chunks in one invocation (≤ 3 s), one chunk at a time, each ≤ 200 ms upstream.
-- Before every chunk: re-read `svc/state`. Preempt (save cursor, state=PREEMPTED) if tier ≥ 2, or critical pool empty,
+- Before every chunk: re-read `svc/state`. Preempt (save cursor, state=PREEMPTED) if tier ≥ 2, or critical pool under its 25% reserve,
   or `yieldRequestedAt` within the last 2 s. Preemption latency is therefore ≤ one chunk.
 - Resume when tier ≤ 1 for one full window and no yield in the last 2 s; jobs resume in ascending deferability with a
   0–500 ms stagger. Aging guard: any PREEMPTED job gets 1 chunk / 10 s unless tier is 4.
 - Jev score `deferability` at submission (0 = someone is waiting on it … 4 = unattended nightly export). Confidence < 0.6 → level 2.
 - Driver: the browser polls `POST /api/jobs/:id/step`; the scheduled tick also steps PREEMPTED/QUEUED jobs so they finish without a tab.
 
-## 3. Jev usage (one `systemOne` call per evaluation, 400 ms timeout, fake in tests)
+## 3. Jev usage (one `systemOne` call per evaluation, 800 ms timeout, fake in tests)
 ```ts
 // interactive request
 priority: choice("Classify the priority of this API request for load shedding", {
@@ -74,7 +76,7 @@ deferability: score("How deferrable is this batch job", [
 ]),
 ```
 Merge rule for tier: `final = clamp(max(deterministic, jevIfConfident), current−1, current+1)`.
-Budget guard: ≤ 30 Jev calls/min, ≤ 2000/day; 3 consecutive errors → skip Jev 30 s. All fallbacks visible in `x-decider`.
+Budget guard: ≤ 60 Jev calls/min, ≤ 3000/day; 3 consecutive errors → skip Jev 30 s. All fallbacks visible in `x-decider`.
 
 ## 4. State and concurrency (demo-sized)
 - `svc/state`: tier, breaker, pools, telemetry ring (50), lastWindow, jevBudget, yieldRequestedAt. CAS via `onlyIfMatch`, ≤ 3 retries.
@@ -124,7 +126,7 @@ E2E (Playwright vs live URL, real Jev):
 
 ## 9. Risks
 - Netlify Free credits (300/month) are a hard stop for the whole site; keep caps low, set a spend alert.
-- Jev latency unmeasured until deploy; 400 ms timeout and per-window memoization bound the impact.
+- Jev latency unmeasured until deploy; 800 ms timeout and per-window memoization bound the impact.
 - Client-driven batch stepping stops if the tab closes; the minute tick covers it, slowly.
 - `@typesafe-ai/sdk` 0.6.0 exposes `choice`; verify `score`/`noul` helper signatures on install.
 
@@ -150,7 +152,7 @@ Goal: best tail latency for critical requests without amplifying upstream stress
   1. Tier ≤ 1 (NORMAL or SOFT_THROTTLE). Off at HARD_THROTTLE and above.
   2. Critical pool has ≥ 2 tokens; each copy consumes one. Hedging is the first thing critical loses under pressure.
   3. Idempotent: GET, or POST with an `Idempotency-Key` header. Deterministic, cannot be overridden.
-  4. Jev noul `safeToRetry` ≥ 0.9 on the request description (e.g. "invoice PDF" yes, "charge card" no).
+  4. Jev noul `safeToRetry` ≥ 0.7 on the request description (e.g. "invoice PDF" yes, "charge card" no).
 - Critical degradation order: hedge → wait budget → admission → (breaker) fail-fast.
 - Simulated upstream gains a tail knob: `tail=0.1` means 10% of calls take 5× the base latency.
 - Visible: `x-hedge: off | armed | fired-won-by-1 | fired-won-by-2 | gated-<reason>`; chart adds critical p99 with hedge on/off.
@@ -158,4 +160,4 @@ Goal: best tail latency for critical requests without amplifying upstream stress
 
 ### 10.3 Jev questions, final set
 `priority` (choice), `stress` (score), `deferability` (score), `safeToRetry` (noul). Confidence gates: 0.6 for the scores/choice,
-0.9 for `safeToRetry`. All advisory; deterministic rules bound every outcome.
+0.7 for `safeToRetry`. All advisory; deterministic rules bound every outcome.

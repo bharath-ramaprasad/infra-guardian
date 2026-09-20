@@ -26,7 +26,7 @@ docs/                PLAN.md, control-plane.md, data-plane.md, RATIONALE.md
 1. Tier changes at most one step per 5 s window, in either direction.
 2. Jev is advisory: it may raise the proposed tier, never lower it below the deterministic tier; confidence below threshold is ignored;
    any Jev failure, timeout, or budget exhaustion falls back to the deterministic policy and says so in `x-decider`.
-3. Hedging fires only when all four gates pass (tier ≤ 1, critical pool ≥ 2, idempotent, safeToRetry ≥ 0.9). Never at HARD_THROTTLE or above.
+3. Hedging fires only when all four gates pass (tier ≤ 1, critical pool ≥ 2, idempotent, safeToRetry ≥ 0.7). Never at HARD_THROTTLE or above.
 4. Batch preemption happens only at chunk boundaries; the cursor is never lost; the aging guard prevents starvation.
 5. Every response carries the header contract in `docs/data-plane.md` §5.
 6. All shared state is per session namespace; one visitor's stress never leaks into another's view.
@@ -46,7 +46,7 @@ docs/                PLAN.md, control-plane.md, data-plane.md, RATIONALE.md
 - Client id is `sha256(ip + user-agent)`; store no PII, no raw IPs.
 - Idempotency gate for hedging is deterministic (GET or `Idempotency-Key`); Jev can only veto, never grant.
 - Reset is per session and rate limited; there is no global reset.
-- Public demo caps: global tokens/s per the tier table, Jev budget 30/min and 2000/day, upstream latency cap 2 s, step budget 3 s.
+- Public demo caps: global tokens/s per the tier table, Jev budget 60/min and 3000/day, upstream latency cap 2 s, step budget 3 s.
 - CORS: same-origin only. No wildcard.
 - Dependencies pinned; run `npm audit` before deploy and fix highs.
 

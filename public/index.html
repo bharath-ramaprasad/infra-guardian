@@ -4,21 +4,87 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>infra-guardian</title>
-  <style>
-    body { font: 16px/1.5 system-ui, sans-serif; margin: 40px auto; max-width: 720px; padding: 0 16px; color: #1a1a1a; }
-    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    pre { background: #f4f4f2; padding: 12px; border-radius: 8px; overflow-x: auto; }
-  </style>
+  <link rel="stylesheet" href="/styles.css" />
 </head>
 <body>
-  <h1>infra-guardian</h1>
-  <p>Scaffold deploy. The Jev-guided circuit breaker, rate limiter, and batch preemption demo is being built here.</p>
-  <p><code>GET /api/hello</code></p>
-  <pre id="out">loading…</pre>
-  <script>
-    fetch("/api/hello").then(r => r.json()).then(j => {
-      document.getElementById("out").textContent = JSON.stringify(j, null, 2);
-    }).catch(e => { document.getElementById("out").textContent = "error: " + e; });
-  </script>
+  <header class="top">
+    <div>
+      <h1>infra-guardian</h1>
+      <p class="sub">A circuit breaker, rate limiter, and batch preemptor whose policy is advised by <a href="https://typesafe.ai" target="_blank" rel="noreferrer">TypeSafe Jev</a> and bounded by code. Everything below is your own sandbox: session <code id="sid"></code>.</p>
+    </div>
+    <div class="links">
+      <a href="https://github.com/bharath-ramaprasad/infra-guardian" target="_blank" rel="noreferrer">Code</a>
+      <a id="statusLink" href="#" target="_blank" rel="noreferrer">Status JSON</a>
+      <button id="resetBtn" class="ghost">Reset session</button>
+    </div>
+  </header>
+
+  <section class="strip">
+    <div class="tile"><div class="label">Tier</div><div id="tier" class="big badge t0">0 NORMAL</div><div id="tierSince" class="hint">since 0 s</div></div>
+    <div class="tile"><div class="label">Breaker</div><div id="breaker" class="big">CLOSED</div><div id="breakerHint" class="hint">&nbsp;</div></div>
+    <div class="tile"><div class="label">Tier decided by</div><div id="decider" class="big">deterministic</div><div id="stressHint" class="hint">no stress score yet</div></div>
+    <div class="tile"><div class="label">Jev</div><div id="jevBudget" class="big">0 calls</div><div id="jevHint" class="hint">&nbsp;</div></div>
+    <div class="tile pools"><div class="label">Class pools (tokens)</div>
+      <div class="pool"><span>critical</span><div class="bar"><i id="poolCritical"></i></div><b id="poolCriticalN">0</b></div>
+      <div class="pool"><span>standard</span><div class="bar"><i id="poolStandard"></i></div><b id="poolStandardN">0</b></div>
+      <div class="pool"><span>bulk</span><div class="bar"><i id="poolBulk"></i></div><b id="poolBulkN">0</b></div>
+    </div>
+  </section>
+
+  <main class="grid">
+    <section class="card">
+      <h2>1. Ask Jev how a request should be treated</h2>
+      <p class="hint">Type what the request is for. Jev returns a typed priority with probabilities and whether it is safe to run twice. Confidence below 0.6 collapses to <em>standard</em>; hedging needs safe-to-retry of at least 0.7 <em>and</em> an idempotency key.</p>
+      <div class="chips" id="chips"></div>
+      <textarea id="desc" rows="2">customer is on the phone waiting for their invoice PDF, read-only fetch</textarea>
+      <div class="row">
+        <label><input type="checkbox" id="idem" checked /> send an Idempotency-Key</label>
+        <button id="sendOnce">Send one request</button>
+      </div>
+      <div id="onceResult" class="result hidden"></div>
+    </section>
+
+    <section class="card">
+      <h2>2. Put it under load</h2>
+      <p class="hint">Two streams hit the guarded endpoint from your browser. Turn up failures or latency on the simulated upstream and watch the tier climb one step per 5 s window, the breaker open, then recovery walk back down.</p>
+      <div class="knobs">
+        <label>Checkout stream (critical) <output id="rpsCritV">4</output>/s<input type="range" id="rpsCrit" min="0" max="20" value="4" /></label>
+        <label>Export stream (bulk) <output id="rpsBulkV">6</output>/s<input type="range" id="rpsBulk" min="0" max="40" value="6" /></label>
+        <label>Upstream failure rate <output id="failV">0</output>%<input type="range" id="fail" min="0" max="100" value="0" /></label>
+        <label>Upstream latency <output id="latV">120</output> ms<input type="range" id="lat" min="0" max="2000" step="10" value="120" /></label>
+        <label>Slow tail share <output id="tailV">10</output>%<input type="range" id="tail" min="0" max="100" value="10" /></label>
+      </div>
+      <div class="row">
+        <button id="startLoad">Start load</button>
+        <button id="stopLoad" class="ghost" disabled>Stop</button>
+        <label><input type="checkbox" id="hedgeOn" checked /> hedging</label>
+        <label><input type="checkbox" id="jevOn" checked /> Jev advisory (toggle resets the session)</label>
+      </div>
+      <canvas id="chartRates" height="150"></canvas>
+      <canvas id="chartLatency" height="150"></canvas>
+      <div class="legend" id="legend"></div>
+    </section>
+
+    <section class="card">
+      <h2>3. Batch work yields to critical traffic</h2>
+      <p class="hint">Submit a batch job; Jev scores how deferrable it is. While it runs, start the checkout stream at a high rate: the job is preempted at the next chunk boundary and resumes from its saved cursor once pressure clears. It never loses work and an aging guard stops it from starving.</p>
+      <div class="row">
+        <input id="jobDesc" value="nightly analytics export for the data warehouse, unattended" />
+        <input id="jobItems" type="number" min="10" max="5000" value="300" />
+        <button id="submitJob">Submit job</button>
+      </div>
+      <div id="jobs"></div>
+    </section>
+
+    <section class="card">
+      <h2>4. Why</h2>
+      <p class="hint">Every response carries headers that explain the decision. The last 25 are here, newest first, with Jev's latest answers.</p>
+      <div id="jevLast" class="result"></div>
+      <div id="log" class="log"></div>
+    </section>
+  </main>
+
+  <footer class="hint">Guarantees: tier moves at most one step per window; Jev can raise caution but never lower it below the deterministic rule; hedging needs all four gates; preemption only at chunk boundaries. Free-tier demo: budgets are capped on purpose.</footer>
+  <script src="/app.js"></script>
 </body>
 </html>

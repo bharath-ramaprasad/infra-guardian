@@ -1,8 +1,14 @@
-import { BATCH_CFG, WINDOW_MS, YIELD_TTL_MS, tierSpec, type Job, type JobEvent, type ServiceState } from "./types";
+import { BATCH_CFG, CRITICAL_RESERVE_SHARE, WINDOW_MS, YIELD_TTL_MS, poolCapacity, tierSpec, type Job, type JobEvent, type ServiceState } from "./types";
 
 // Cooperative preemption at chunk boundaries. The cursor is the checkpoint; it only ever moves forward.
 
-export type PreemptReason = "tier" | "critical-pool-empty" | "yield";
+export type PreemptReason = "tier" | "critical-reserve" | "yield";
+
+/** True when the critical pool has dropped below its reserve share (or is empty). */
+export function criticalUnderReserve(state: ServiceState): boolean {
+  const cap = poolCapacity(state.tier, "critical");
+  return cap === 0 || state.pools.critical < Math.max(1, cap * CRITICAL_RESERVE_SHARE);
+}
 
 export function yieldActive(state: ServiceState, now: number): boolean {
   return state.yieldRequestedAt !== null && now - state.yieldRequestedAt < YIELD_TTL_MS;
@@ -10,7 +16,7 @@ export function yieldActive(state: ServiceState, now: number): boolean {
 
 export function preemptReason(state: ServiceState, now: number): PreemptReason | null {
   if (state.tier >= 2) return "tier";
-  if (state.pools.critical < 1) return "critical-pool-empty";
+  if (criticalUnderReserve(state)) return "critical-reserve";
   if (yieldActive(state, now)) return "yield";
   return null;
 }

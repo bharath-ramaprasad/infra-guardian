@@ -2,7 +2,8 @@ import type { Config, Context } from "@netlify/functions";
 import { TIER_NAMES, WAIT_BUDGET_MS, decideAdmission, waitBudgetMs, type Admission, type ClassCacheEntry, type Outcome, type ServiceState } from "../../src/core";
 import { badRequest, descriptionOf, flag, idempotencyKeyOf, json, readJson, sessionId, sleep } from "../../src/http";
 import { classify, ensureWindow, loadState, makeCtx, raiseYield, recordUpstream, touchSession, updateState, type Ctx } from "../../src/service";
-import { callUpstream, clampUpstreamParams, type UpstreamParams, type UpstreamResult } from "../../src/upstream";
+import { runHedged } from "../../src/hedgerun";
+import { clampUpstreamParams } from "../../src/upstream";
 
 // The guarded endpoint. Every response explains itself in headers (docs/data-plane.md §5).
 
@@ -18,24 +19,6 @@ function headersFor(ctx: Ctx, state: ServiceState, cls: ClassCacheEntry, waited:
     "x-jev": ctx.decider.kind,
     ...extra,
   };
-}
-
-async function runUpstream(params: UpstreamParams, hedge: { allowed: boolean; gate: string | null; delayMs: number } | null): Promise<{ result: UpstreamResult; elapsedMs: number; hedgeHeader: string; fired: boolean }> {
-  const started = Date.now();
-  if (!hedge || !hedge.allowed) {
-    const result = await callUpstream(params);
-    const hedgeHeader = !hedge || hedge.gate === "off" ? "off" : `gated-${hedge.gate}`;
-    return { result, elapsedMs: Date.now() - started, hedgeHeader, fired: false };
-  }
-  const ac1 = new AbortController();
-  const ac2 = new AbortController();
-  const copy1 = callUpstream(params, ac1.signal).then((r) => ({ r, copy: 1 as const }));
-  const first = await Promise.race([copy1, sleep(hedge.delayMs).then(() => null)]);
-  if (first) return { result: first.r, elapsedMs: Date.now() - started, hedgeHeader: "armed", fired: false };
-  const copy2 = callUpstream(params, ac2.signal).then((r) => ({ r, copy: 2 as const }));
-  const winner = await Promise.race([copy1, copy2]);
-  (winner.copy === 1 ? ac2 : ac1).abort();
-  return { result: winner.r, elapsedMs: Date.now() - started, hedgeHeader: `fired-won-by-${winner.copy}`, fired: true };
 }
 
 export default async (req: Request, _context: Context) => {
@@ -99,7 +82,7 @@ export default async (req: Request, _context: Context) => {
 
   const probe = admission.kind === "probe";
   const hedge = admission.kind === "admit" ? admission.hedge : null;
-  const run = await runUpstream(params, probe ? null : hedge);
+  const run = await runHedged(params, probe ? null : hedge);
   const outcome: Outcome = { ok: run.result.ok, latencyMs: run.elapsedMs, timeout: run.result.timeout, at: Date.now() };
   state = await recordUpstream(ctx, outcome, probe, { admitted: 1, hedgeFired: run.fired ? 1 : 0, [`class_${cls.priority}`]: 1 });
 

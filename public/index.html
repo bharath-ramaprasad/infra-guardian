@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>infra-guardian</title>
+  <style>
+    body { font: 16px/1.5 system-ui, sans-serif; margin: 40px auto; max-width: 720px; padding: 0 16px; color: #1a1a1a; }
+    code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    pre { background: #f4f4f2; padding: 12px; border-radius: 8px; overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <h1>infra-guardian</h1>
+  <p>Scaffold deploy. The Jev-guided circuit breaker, rate limiter, and batch preemption demo is being built here.</p>
+  <p><code>GET /api/hello</code></p>
+  <pre id="out">loading…</pre>
+  <script>
+    fetch("/api/hello").then(r => r.json()).then(j => {
+      document.getElementById("out").textContent = JSON.stringify(j, null, 2);
+    }).catch(e => { document.getElementById("out").textContent = "error: " + e; });
+  </script>
+</body>
+</html>

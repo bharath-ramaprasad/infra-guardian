@@ -20,10 +20,17 @@ export interface HedgeDecision {
   readonly delayMs: number;
 }
 
-export const HEDGE_DELAY = { floorMs: 50, capMs: 2000 } as const;
+/** Copy 2 goes out only after 1.5× the rolling p50, so ordinary requests never hedge and tail requests do.
+ *  Until there are enough samples the basis is unknown and a conservative default applies. */
+export const HEDGE_DELAY = { floorMs: 50, capMs: 2000, headroom: 1.5, defaultMs: 300 } as const;
+
+export function hedgeDelayMs(p50Ms: number): number {
+  const basis = p50Ms > 0 ? p50Ms * HEDGE_DELAY.headroom : HEDGE_DELAY.defaultMs;
+  return Math.min(HEDGE_DELAY.capMs, Math.max(HEDGE_DELAY.floorMs, Math.round(basis)));
+}
 
 export function hedgeDecision(i: HedgeInput): HedgeDecision {
-  const delayMs = Math.min(HEDGE_DELAY.capMs, Math.max(HEDGE_DELAY.floorMs, Math.round(i.p50Ms)));
+  const delayMs = hedgeDelayMs(i.p50Ms);
   if (!i.enabled) return { allowed: false, gate: "off", delayMs };
   if (i.priority !== "critical") return { allowed: false, gate: "class", delayMs };
   if (i.tier > 1) return { allowed: false, gate: "tier", delayMs };

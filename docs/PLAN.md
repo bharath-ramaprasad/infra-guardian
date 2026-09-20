@@ -146,7 +146,7 @@ E2E (Playwright vs live URL, real Jev):
 
 ### 10.2 Hedged requests for the critical class
 Goal: best tail latency for critical requests without amplifying upstream stress.
-- Mode: 1:2 delayed hedge. Send copy 2 only if copy 1 has not returned within the rolling p50 upstream latency (min 50 ms);
+- Mode: 1:2 delayed hedge. Send copy 2 only if copy 1 has not returned within 1.5× the rolling p50 upstream latency (300 ms default until 5 samples; floor 50 ms);
   first response wins; the loser is aborted via AbortController and the simulated upstream honours the abort.
 - Gates, all required:
   1. Tier ≤ 1 (NORMAL or SOFT_THROTTLE). Off at HARD_THROTTLE and above.

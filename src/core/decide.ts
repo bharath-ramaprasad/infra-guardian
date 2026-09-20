@@ -51,7 +51,8 @@ export function decideAdmission(i: AdmissionInput): Admission {
       state: { ...state, yieldRequestedAt },
     };
   }
-  const p50Ms = summarize(state.telemetry, now - WINDOW_MS * 2).p50Ms;
+  const recent = summarize(state.telemetry, 0);
+  const p50Ms = recent.n >= 5 ? recent.p50Ms : 0;
   const hedge = hedgeDecision({
     tier: state.tier,
     pools: take.pools,

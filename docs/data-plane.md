@@ -36,7 +36,7 @@ flowchart TB
 
 ## 2. Hedged upstream call, critical class only
 
-Delayed 1:2 hedge. The second copy is sent only if the first has not returned within the rolling p50 upstream latency.
+Delayed 1:2 hedge. The second copy is sent only if the first has not returned within 1.5× the rolling p50 upstream latency (300 ms until there are five samples), so ordinary requests never hedge and tail requests do.
 The first response wins, the loser is aborted, and the simulated upstream honours the abort.
 
 ```mermaid
@@ -44,7 +44,7 @@ flowchart LR
   GATES{All four gates pass?<br/>tier ≤ 1 · critical pool ≥ 2<br/>GET or Idempotency-Key · safeToRetry ≥ 0.7}
   SINGLE([Single call<br/>x-hedge: gated-reason])
   C1["Copy 1<br/>consume 1 token"]
-  TIMER["Wait min p50, 2 s<br/>floor 50 ms"]
+  TIMER["Wait 1.5 × p50<br/>default 300 ms, floor 50, cap 2 s"]
   BACK{Copy 1 returned?}
   ONE([x-hedge: armed<br/>copy 2 never needed])
   C2["Copy 2<br/>consume 1 token"]

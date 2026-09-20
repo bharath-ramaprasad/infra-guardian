@@ -77,8 +77,8 @@ npm run deploy       # netlify deploy --prod
 - Commit messages end with `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>`.
 
 ## Deliverables checklist (assignment)
-- [ ] Deployed prototype URL, usable immediately in a browser and via curl
-- [ ] Repo with this file, `docs/`, tests, README with curl examples
-- [ ] `docs/RATIONALE.md`: theme choice, what is non-obvious, tradeoffs, extensions, time spent
+- [x] Deployed prototype URL, usable immediately in a browser and via curl: https://infra-guardian.netlify.app
+- [x] Repo with this file, `docs/`, tests, README with curl examples (push when the owner says so)
+- [ ] `docs/RATIONALE.md`: drafted; owner fills in time spent and the AI-usage section
 - [ ] ~5 min video (owner records)
 - [ ] AI transcripts exported and linked

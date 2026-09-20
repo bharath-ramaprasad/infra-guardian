@@ -146,7 +146,7 @@ async function scenarioHedge() {
   const s = sid("hedge");
   const hedges = [];
   for (let i = 0; i < 8; i++) {
-    const r = await protectedReq(s, "fetch the customer's invoice PDF, read only, a person is waiting", "&latency=150&tail=0.5", { idempotencyKey: `h-${i}` });
+    const r = await protectedReq(s, "fetch the customer's invoice PDF, read only, a person is waiting", "&latency=150&tail=0.3", { idempotencyKey: `h-${i}` });
     hedges.push(r.headers["x-hedge"]);
   }
   const anyHedge = hedges.some((h) => h === "armed" || (h ?? "").startsWith("fired"));

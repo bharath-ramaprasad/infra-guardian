@@ -8,9 +8,10 @@ describe("invariant 3: hedging needs all four gates", () => {
   it("fires when every gate passes, with a bounded delay", () => {
     const d = hedgeDecision(base);
     expect(d.allowed).toBe(true);
-    expect(d.delayMs).toBe(120);
+    expect(d.delayMs).toBe(180);
     expect(hedgeDecision({ ...base, p50Ms: 5 }).delayMs).toBe(50);
     expect(hedgeDecision({ ...base, p50Ms: 9_000 }).delayMs).toBe(2000);
+    expect(hedgeDecision({ ...base, p50Ms: 0 }).delayMs).toBe(300);
   });
 
   it("names the failing gate", () => {

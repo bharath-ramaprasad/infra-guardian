@@ -95,6 +95,7 @@ export default async (req: Request, _context: Context) => {
     status,
     {
       ok: run.result.ok,
+      ...(run.result.ok ? {} : { error: run.result.timeout ? "upstream-timeout" : "upstream-error" }),
       upstream: { latencyMs: run.elapsedMs, timeout: run.result.timeout, params },
       decision: { ...decisionBase, hedge: run.hedgeHeader, probe, totalMs: Date.now() - t0 },
       why: [...whyBase, ...explainUpstream(run.result, run.elapsedMs, params, run.hedgeHeader, probe)],

@@ -121,8 +121,9 @@ function applyJevCounters(state: ServiceState, call: JevCall<unknown>, now: numb
 /** Evaluate the window if it is stale, consulting Jev for the stress score when allowed. */
 export async function ensureWindow(ctx: Ctx, state: ServiceState, now: number, allowJev = true): Promise<{ state: ServiceState; evaluated: boolean; reasons: readonly string[] }> {
   if (!isWindowStale(state, now)) return { state, evaluated: false, reasons: [] };
-  const summary = summarize(state.telemetry, now - WINDOW_MS);
-  const previous = summarize(state.telemetry, now - 2 * WINDOW_MS);
+  const since = Math.max(state.lastEvaluation?.at ?? 0, now - 2 * WINDOW_MS);
+  const summary = summarize(state.telemetry, since);
+  const previous = summarize(state.telemetry, since - WINDOW_MS);
   const recent = state.telemetry.slice(-15).map((o) => ({ ok: o.ok, latencyMs: o.latencyMs, timeout: o.timeout }));
   const call = allowJev && summary.n > 0 && state.breaker.state === "CLOSED"
     ? await consultJev(ctx, state, now, (signal) => ctx.decider.stress({ tier: state.tier, summary, previous, recent }, signal))

@@ -89,7 +89,7 @@ flowchart TB
   READ["Strong read session/svc/state with etag"]
   STALE{Still stale?}
   SKIP([Another caller already evaluated: use theirs])
-  DET["Deterministic tier from telemetry ring"]
+  DET["Deterministic tier from outcomes<br/>since the last evaluation, ≤ 2 windows"]
   BUD{Jev budget and inner breaker OK?}
   CALL["Jev systemOne: stress<br/>800 ms timeout"]
   CONF{confidence ≥ 0.6?}

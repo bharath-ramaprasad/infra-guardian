@@ -24,7 +24,8 @@ Scope: demoable, functional, tested end to end, live on a public URL. Scale is e
 | 3    | SHED          | 5        | 100% / 0% / 0%             | no        | 0 (preempted)  | 503 shed               |
 | 4    | OPEN          | 0        | probe only                 | no        | 0              | 503 circuit-open       |
 
-Transitions: 5 s evaluation window, at most ±1 tier per window. Escalate on error rate ≥ 50% over ≥ 10 calls,
+Transitions: 5 s evaluation window, at most ±1 tier per window. An evaluation looks at every outcome since the previous
+evaluation (capped at two windows), so a burst that ended a few seconds before anyone evaluated still counts. Escalate on error rate ≥ 50% over ≥ 10 calls,
 p95 ≥ 1500 ms, or ≥ 5 timeouts. De-escalate after 2 clean windows. OPEN → HALF_OPEN after 10 s (doubling, cap 60 s);
 one probe; success → tier 3 and walk down, failure → OPEN.
 

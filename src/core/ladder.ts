@@ -103,7 +103,10 @@ export function evaluateWindow(
     return { state: next, changed: next.tier !== state.tier, reasons: breakerReasons };
   }
 
-  const summary = summarize(state.telemetry, now - WINDOW_MS);
+  // Everything since the last evaluation counts (capped at two windows), so a burst that ended a few seconds before
+  // anyone evaluated the window is still seen. A trailing 5 s view at evaluation time would miss it.
+  const since = Math.max(state.lastEvaluation?.at ?? 0, now - 2 * WINDOW_MS);
+  const summary = summarize(state.telemetry, since);
   const signal = deterministicSignal(summary);
   const cleanWindows = signal === "clean" ? state.cleanWindows + 1 : 0;
   reasons.push(...escalationReasons(summary));
@@ -127,6 +130,7 @@ export function evaluateWindow(
     reasons.push(`tripped breaker, cooldown ${breaker.cooldownMs / 1000} s`);
   }
   const changed = nextTier !== state.tier;
+  reasons.unshift(`window: ${summary.n} calls, ${Math.round(summary.errorRate * 100)}% errors, p95 ${summary.p95Ms} ms, ${summary.timeouts} timeouts`);
   if (changed && nextTier < state.tier) reasons.push(`${THRESHOLDS.cleanWindowsToRecover} clean windows in a row`);
   if (!changed && signal === "clean") reasons.push(`clean window ${cleanWindows} of ${THRESHOLDS.cleanWindowsToRecover} needed to step down`);
   if (!changed && signal === "escalate" && proposal > nextTier) reasons.push("clamped to one step per window");

@@ -26,12 +26,50 @@
     return perSec.get(sec);
   }
 
-  function addLog(kind, res, ms) {
-    const h = res.headers;
-    const line = `${new Date().toLocaleTimeString()} ${kind.padEnd(8)} ${res.status} ${ms}ms tier=${(h.get("x-tier") || "?").split(" ")[0]} brk=${h.get("x-breaker") || "?"} pri=${(h.get("x-priority") || "?").split(" ")[0]} dec=${h.get("x-decider") || "?"} hedge=${h.get("x-hedge") || "-"} wait=${h.get("x-wait-ms") || 0} left=${h.get("x-ratelimit-remaining") || "-"}${h.get("retry-after") ? " retry-after=" + h.get("retry-after") : ""}`;
-    log.unshift({ status: res.status, line });
+  let selected = null;
+  let recSeq = 0;
+  function headersOf(res) {
+    const out = {};
+    res.headers.forEach((v, k) => { if (k.startsWith("x-") && k !== "x-nf-request-id" || k === "retry-after") out[k] = v; });
+    return out;
+  }
+  function addLog(kind, res, ms, body) {
+    const h = headersOf(res);
+    const rec = { id: ++recSeq, at: new Date(), kind, status: res.status, ms, headers: h, body };
+    log.unshift(rec);
     if (log.length > 25) log.pop();
-    $("log").innerHTML = log.map((l) => `<div class="s${l.status}">${escapeHtml(l.line)}</div>`).join("");
+    renderLog();
+    return rec;
+  }
+  function renderLog() {
+    $("log").innerHTML = log.map((r) => {
+      const h = r.headers;
+      return `<div class="row-log s${r.status}${selected && selected.id === r.id ? " sel" : ""}" data-id="${r.id}">
+        <span class="t">${r.at.toLocaleTimeString()}</span><b>${escapeHtml(r.kind)}</b><b>${r.status}</b><span>${r.ms} ms</span>
+        <span class="pill">tier ${escapeHtml((h["x-tier"] || "?").split(" ")[0])}</span><span class="pill">${escapeHtml(h["x-breaker"] || "?")}</span>
+        <span class="pill">${escapeHtml((h["x-priority"] || "?").split(" ")[0])}</span><span class="pill">${escapeHtml(h["x-decider"] || "?")}</span>
+        <span class="pill">hedge ${escapeHtml(h["x-hedge"] || "-")}</span>${Number(h["x-wait-ms"]) > 0 ? `<span class="pill">waited ${escapeHtml(h["x-wait-ms"])} ms</span>` : ""}${h["retry-after"] ? `<span class="pill">retry-after ${escapeHtml(h["retry-after"])} s</span>` : ""}
+      </div>`;
+    }).join("");
+    $("log").querySelectorAll(".row-log").forEach((el) => el.addEventListener("click", () => { const r = log.find((x) => x.id === Number(el.dataset.id)); if (r) select(r); }));
+  }
+  function select(rec) {
+    selected = rec;
+    renderLog();
+    $("detailsEmpty").classList.add("hidden");
+    $("details").classList.remove("hidden");
+    const b = rec.body || {};
+    const d = b.decision || {};
+    const title = `${rec.kind} → HTTP ${rec.status} ${b.ok ? "ok" : (b.error || (b.upstream && b.upstream.timeout ? "upstream timeout" : "upstream error"))}`;
+    $("dTitle").textContent = title;
+    $("dWhen").textContent = `${rec.at.toLocaleTimeString()} · ${rec.ms} ms end to end`;
+    $("dWhy").innerHTML = (b.why || ["No explanation in this response."]).map((w) => `<li>${escapeHtml(w)}</li>`).join("");
+    $("dState").innerHTML = (b.state || []).map((w) => `<li>${escapeHtml(w)}</li>`).join("") || "<li>n/a</li>";
+    const dec = { priority: d.priority, "probabilities": d.probabilities ? Object.entries(d.probabilities).map(([k, v]) => `${k} ${fmt(v)}`).join(" · ") : undefined, confidence: fmt(d.confidence), "safe to retry": fmt(d.safeToRetry), "decided by": d.decider, "class source": d.classified, tier: d.tierName !== undefined ? `${d.tier} ${d.tierName}` : undefined, breaker: d.breaker, "waited": d.waitedMs !== undefined ? `${d.waitedMs} ms of ${d.waitBudgetMs} ms` : undefined, hedge: d.hedge, probe: d.probe ? "yes" : undefined, upstream: b.upstream ? `${b.upstream.latencyMs} ms${b.upstream.timeout ? " (timeout)" : ""}, params fail ${b.upstream.params.fail} latency ${b.upstream.params.latency} tail ${b.upstream.params.tail}` : "not called" };
+    $("dDecision").innerHTML = Object.entries(dec).filter(([, v]) => v !== undefined && v !== "–").map(([k, v]) => `<b>${escapeHtml(k)}</b><span>${escapeHtml(String(v))}</span>`).join("");
+    $("dHeaders").innerHTML = Object.entries(rec.headers).map(([k, v]) => `<b>${escapeHtml(k)}</b><span>${escapeHtml(v)}</span>`).join("");
+    $("dRaw").textContent = JSON.stringify(b, null, 2);
+    if (window.innerWidth < 1300) $("detailsCard").scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   function escapeHtml(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
@@ -52,8 +90,9 @@
     const b = bucket(Math.floor(Date.now() / 1000));
     if (res.status === 200) b.ok++; else if (res.status === 429) b.r429++; else if (res.status === 503) b.r503++; else b.r5xx++;
     if (res.status === 200) (kind === "checkout" ? b.latCrit : b.latBulk).push(ms);
-    addLog(kind, res, ms);
-    return res;
+    const payload = await res.json().catch(() => ({}));
+    const rec = addLog(kind, res, ms, payload);
+    return { res, body: payload, rec };
   }
 
   function knobs() {
@@ -76,10 +115,11 @@
     const desc = $("desc").value.trim();
     if (!desc) return;
     $("sendOnce").disabled = true;
-    const res = await protectedCall("once", desc, $("idem").checked ? "key-" + Math.random().toString(36).slice(2, 8) : null, knobs());
+    const out = await protectedCall("once", desc, $("idem").checked ? "key-" + Math.random().toString(36).slice(2, 8) : null, knobs());
     $("sendOnce").disabled = false;
-    if (!res) return;
-    const j = await res.json().catch(() => ({}));
+    if (!out) return;
+    const { res, body: j, rec } = out;
+    select(rec);
     const d = j.decision || {};
     const probs = d.probabilities || {};
     const el = $("onceResult");
@@ -91,6 +131,7 @@
         <b>safe to retry</b><span>${fmt(d.safeToRetry)} → hedge <code>${escapeHtml(d.hedge || res.headers.get("x-hedge") || "-")}</code></span>
         <b>admission</b><span>tier ${escapeHtml(res.headers.get("x-tier"))}, breaker ${escapeHtml(res.headers.get("x-breaker"))}, waited ${escapeHtml(res.headers.get("x-wait-ms"))} ms of a ${d.waitBudgetMs ?? "?"} ms budget, ${escapeHtml(res.headers.get("x-ratelimit-remaining"))} tokens left</span>
         <b>upstream</b><span>${j.upstream ? j.upstream.latencyMs + " ms" : "not called"}${d.probe ? " (half-open probe)" : ""}</span>
+        <b>why</b><span>${escapeHtml((j.why || [])[j.why && j.why.length > 1 ? 1 : 0] || "")} <a href="#detailsCard">details →</a></span>
       </div>
       ${["critical", "standard", "bulk"].map((c) => `<div class="prob"><span>${c}</span><div class="bar"><i style="width:${Math.round((probs[c] || 0) * 100)}%"></i></div><span>${fmt(probs[c])}</span></div>`).join("")}`;
   });
@@ -147,7 +188,7 @@
           const h = (r[k] / max) * (H - 20); if (h > 0) { ctx.fillStyle = col; ctx.fillRect(x + 1, y - h, bw - 2, h); y -= h; }
         }
       });
-      ctx.fillStyle = "#888"; ctx.font = "11px system-ui"; ctx.fillText(`${max}/s`, 0, 12); ctx.fillText("requests per second, last 60 s", pad, 12);
+      ctx.fillStyle = "#888"; ctx.font = "11px system-ui"; ctx.textAlign = "left"; ctx.fillText("requests per second, last 60 s", 0, 12); ctx.textAlign = "right"; ctx.fillText(`peak ${max}/s`, W - 2, 12); ctx.textAlign = "left";
     }
     // latency + tier
     {
@@ -163,7 +204,7 @@
       ctx.strokeStyle = C.tier; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]); ctx.beginPath(); let st = false;
       rows.forEach((r, i) => { if (r.tier === null) return; const x = pad + i * bw, y = H - 4 - (r.tier / 4) * (H - 20); if (!st) { ctx.moveTo(x, y); st = true; } else ctx.lineTo(x, y); ctx.lineTo(x + bw, y); });
       ctx.stroke(); ctx.setLineDash([]);
-      ctx.fillStyle = "#888"; ctx.font = "11px system-ui"; ctx.fillText(`${maxL}ms`, 0, 12); ctx.fillText("p50 latency by stream and tier (dashed)", pad, 12);
+      ctx.fillStyle = "#888"; ctx.font = "11px system-ui"; ctx.textAlign = "left"; ctx.fillText("p50 latency by stream, tier dashed (0–4)", 0, 12); ctx.textAlign = "right"; ctx.fillText(`top ${maxL} ms`, W - 2, 12); ctx.textAlign = "left";
     }
   }
 
@@ -223,7 +264,21 @@
     $("jevOn").checked = !status.jev.off;
     renderJobs(status.jobs || []);
     const last = status.jev.last;
-    $("jevLast").innerHTML = last ? `<b>Last Jev answer</b> (${escapeHtml(last.kind)}, ${last.latencyMs} ms, ${Math.round((status.now - last.at) / 1000)} s ago): <code>${escapeHtml(JSON.stringify(last.answers).slice(0, 600))}</code>` : `<span class="hint">No Jev answer yet in this session.</span>`;
+    if (last) {
+      const a = last.answers || {};
+      const parts = [];
+      if (a.description) parts.push(`“${escapeHtml(String(a.description).slice(0, 120))}”`);
+      if (a.priority) parts.push(`priority <b>${escapeHtml(a.priority)}</b> (${Object.entries(a.probabilities || {}).map(([k, v]) => `${k} ${fmt(v)}`).join(", ")}; confidence ${fmt(a.confidence)})`);
+      if (a.safeToRetry !== undefined) parts.push(`safe to retry ${fmt(a.safeToRetry)}`);
+      if (a.stress) parts.push(`stress <b>${fmt(a.stress.score)}</b> of 4 (confidence ${fmt(a.stress.confidence)})`);
+      if (a.score !== undefined && !a.stress && !a.priority) parts.push(`deferability <b>${fmt(a.score)}</b> of 4 (confidence ${fmt(a.confidence)})`);
+      $("jevLast").innerHTML = `<b>Last Jev answer</b> (${escapeHtml(last.kind)}, ${last.latencyMs} ms, ${Math.round((status.now - last.at) / 1000)} s ago): ${parts.join(" · ")}`;
+    } else {
+      $("jevLast").innerHTML = `<span class="hint">No Jev answer yet in this session.</span>`;
+    }
+    $("stateWhy").innerHTML = (status.explain || []).map((w) => `<li>${escapeHtml(w)}</li>`).join("");
+    const hist = (status.tierHistory || []).slice().reverse();
+    $("tierHistory").innerHTML = hist.length ? hist.map((h) => `<div><span class="t">${new Date(h.at).toLocaleTimeString()}</span><b>${h.from} → ${h.to}</b> <span class="pill">${escapeHtml(h.breaker.toLowerCase())}</span> <span class="pill">${escapeHtml(h.decider)}</span> ${escapeHtml(h.reasons.join("; "))}</div>`).join("") : `<div class="hint">No tier changes yet in this session.</div>`;
     drawCharts();
   }
   refreshStatus();

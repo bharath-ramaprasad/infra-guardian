@@ -78,9 +78,30 @@
 
     <section class="card">
       <h2>4. Why</h2>
-      <p class="hint">Every response carries headers that explain the decision. The last 25 are here, newest first, with Jev's latest answers.</p>
+      <p class="hint">Every response carries headers that explain the decision. The last 25 are here, newest first. Click one to see the full reasoning in the details card.</p>
       <div id="jevLast" class="result"></div>
       <div id="log" class="log"></div>
+    </section>
+
+    <section class="card details" id="detailsCard">
+      <h2>5. Decision details</h2>
+      <div id="detailsEmpty" class="hint">Send a request or click a row in the log. The service explains each decision from the same state it used to make it.</div>
+      <div id="details" class="hidden">
+        <div class="dhead"><span id="dTitle"></span><span id="dWhen" class="hint"></span></div>
+        <h3>Why this response</h3>
+        <ul id="dWhy" class="why"></ul>
+        <h3>Where the system was</h3>
+        <ul id="dState" class="why"></ul>
+        <div class="two">
+          <div><h3>Decision</h3><div id="dDecision" class="kv small"></div></div>
+          <div><h3>Headers</h3><div id="dHeaders" class="kv small mono"></div></div>
+        </div>
+        <details><summary>Raw response</summary><pre id="dRaw"></pre></details>
+      </div>
+      <h3>Current state, explained</h3>
+      <ul id="stateWhy" class="why"></ul>
+      <h3>Tier changes</h3>
+      <div id="tierHistory" class="hist"></div>
     </section>
   </main>
 

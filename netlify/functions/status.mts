@@ -1,6 +1,7 @@
 import type { Config, Context } from "@netlify/functions";
 import { JEV_BUDGET, TIER_NAMES, WINDOW_MS, cooldownRemainingMs, summarize, tierSpec, yieldActive } from "../../src/core";
 import { badRequest, json, sessionId } from "../../src/http";
+import { explainTier } from "../../src/explain";
 import { ensureWindow, listJobs, loadState, makeCtx, withYield } from "../../src/service";
 
 // Everything a reviewer needs to see the system reasoning, from curl alone.
@@ -29,6 +30,9 @@ export default async (req: Request, _context: Context) => {
       tierName: TIER_NAMES[state.tier],
       tierSince: state.tierChangedAt,
       tierSpec: spec,
+      tierHistory: state.tierHistory,
+      lastEvaluation: state.lastEvaluation,
+      explain: explainTier(state, now),
       breaker: { state: state.breaker.state, cooldownMs: state.breaker.cooldownMs, cooldownRemainingMs: cooldownRemainingMs(state.breaker, now), probeInFlight: state.breaker.probeStartedAt !== null },
       pools: { critical: +state.pools.critical.toFixed(2), standard: +state.pools.standard.toFixed(2), bulk: +state.pools.bulk.toFixed(2) },
       window: { id: state.window, cleanWindows: state.cleanWindows, last, recent },

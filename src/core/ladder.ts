@@ -9,7 +9,15 @@ import {
   type DeciderTag,
   type ServiceState,
   type Tier,
+  type TierChange,
 } from "./types";
+
+const HISTORY_MAX = 12;
+
+function pushHistory(history: readonly TierChange[], change: TierChange): TierChange[] {
+  const next = [...history, change];
+  return next.length > HISTORY_MAX ? next.slice(next.length - HISTORY_MAX) : next;
+}
 
 // The tier ladder. Invariant: |tier(next) − tier(current)| ≤ 1 per window, and Jev can only raise the proposal.
 
@@ -79,6 +87,8 @@ export function evaluateWindow(
 
   // Breaker owns tier 4: while it is not CLOSED the ladder does not run.
   if (breaker.state !== "CLOSED") {
+    const breakerReasons = [breaker.state === "HALF_OPEN" ? `breaker HALF_OPEN after ${state.breaker.cooldownMs / 1000} s cooldown, waiting for one probe` : `breaker OPEN, probe in ${Math.max(0, Math.ceil((breaker.openedAt !== null ? breaker.openedAt + breaker.cooldownMs - now : 0) / 1000))} s`];
+    const transitioned = breaker.state !== state.breaker.state;
     const next: ServiceState = {
       ...state,
       breaker,
@@ -86,9 +96,11 @@ export function evaluateWindow(
       window: wid,
       cleanWindows: 0,
       pools: recapPools(refillPools(state.pools, 4, now), 4),
+      lastEvaluation: { at: now, signal: "breaker", cleanWindows: 0, reasons: breakerReasons, samples: 0 },
+      tierHistory: transitioned ? pushHistory(state.tierHistory, { at: now, from: state.tier, to: 4, breaker: breaker.state, decider: "deterministic", reasons: breakerReasons }) : state.tierHistory,
       updatedAt: now,
     };
-    return { state: next, changed: next.tier !== state.tier, reasons: [`breaker ${breaker.state}`] };
+    return { state: next, changed: next.tier !== state.tier, reasons: breakerReasons };
   }
 
   const summary = summarize(state.telemetry, now - WINDOW_MS);
@@ -112,9 +124,12 @@ export function evaluateWindow(
 
   if (nextTier === 4) {
     breaker = tripBreaker(breaker, now);
-    reasons.push("tripped breaker");
+    reasons.push(`tripped breaker, cooldown ${breaker.cooldownMs / 1000} s`);
   }
   const changed = nextTier !== state.tier;
+  if (changed && nextTier < state.tier) reasons.push(`${THRESHOLDS.cleanWindowsToRecover} clean windows in a row`);
+  if (!changed && signal === "clean") reasons.push(`clean window ${cleanWindows} of ${THRESHOLDS.cleanWindowsToRecover} needed to step down`);
+  if (!changed && signal === "escalate" && proposal > nextTier) reasons.push("clamped to one step per window");
   const next: ServiceState = {
     ...state,
     tier: nextTier,
@@ -125,6 +140,8 @@ export function evaluateWindow(
     pools: recapPools(refillPools(state.pools, nextTier, now), nextTier),
     decider,
     lastStress: jev ? { score: jev.score, confidence: jev.confidence, at: now } : state.lastStress,
+    lastEvaluation: { at: now, signal, cleanWindows, reasons, samples: summary.n },
+    tierHistory: changed ? pushHistory(state.tierHistory, { at: now, from: state.tier, to: nextTier, breaker: breaker.state, decider, reasons }) : state.tierHistory,
     updatedAt: now,
   };
   return { state: next, changed, reasons };
@@ -134,6 +151,7 @@ export function evaluateWindow(
 export function applyProbeResult(state: ServiceState, ok: boolean, now: number): ServiceState {
   const breaker = recordProbe(state.breaker, ok, now);
   const tier: Tier = ok ? 3 : 4;
+  const reasons = ok ? ["half-open probe succeeded, breaker CLOSED, ladder resumes at SHED"] : [`half-open probe failed, breaker OPEN again, cooldown doubled to ${breaker.cooldownMs / 1000} s`];
   return {
     ...state,
     breaker,
@@ -141,6 +159,8 @@ export function applyProbeResult(state: ServiceState, ok: boolean, now: number):
     tierChangedAt: tier !== state.tier ? now : state.tierChangedAt,
     cleanWindows: 0,
     pools: recapPools(refillPools(state.pools, tier, now), tier),
+    lastEvaluation: { at: now, signal: "breaker", cleanWindows: 0, reasons, samples: 1 },
+    tierHistory: pushHistory(state.tierHistory, { at: now, from: state.tier, to: tier, breaker: breaker.state, decider: "deterministic", reasons }),
     updatedAt: now,
   };
 }

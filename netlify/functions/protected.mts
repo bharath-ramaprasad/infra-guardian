@@ -2,6 +2,7 @@ import type { Config, Context } from "@netlify/functions";
 import { TIER_NAMES, WAIT_BUDGET_MS, decideAdmission, waitBudgetMs, type Admission, type ClassCacheEntry, type Outcome, type ServiceState } from "../../src/core";
 import { badRequest, descriptionOf, flag, idempotencyKeyOf, json, readJson, sessionId, sleep } from "../../src/http";
 import { classify, ensureWindow, loadState, makeCtx, raiseYield, recordUpstream, touchSession, updateState, type Ctx } from "../../src/service";
+import { explainAdmission, explainClass, explainTier, explainUpstream } from "../../src/explain";
 import { runHedged } from "../../src/hedgerun";
 import { clampUpstreamParams } from "../../src/upstream";
 
@@ -68,16 +69,19 @@ export default async (req: Request, _context: Context) => {
   const yieldNow = cls.priority === "critical" && (contention || admission.kind === "reject" || (admission.kind === "admit" && admission.state.yieldRequestedAt !== null && Date.now() - admission.state.yieldRequestedAt < 1000));
   if (yieldNow) await raiseYield(ctx, Date.now());
 
+  const nowForWhy = Date.now();
+  const whyBase = [...explainClass(cls), ...explainAdmission(state, admission, cls, waited, budget, contention, nowForWhy)];
+  const decisionBase = { tier: state.tier, tierName: TIER_NAMES[state.tier], breaker: state.breaker.state, priority: cls.priority, probabilities: cls.probabilities, confidence: cls.confidence, safeToRetry: cls.safeToRetry, decider: cls.decider, classified: c.cached ? "cache" : ctx.decider.kind, waitedMs: waited, waitBudgetMs: budget };
   if (contention) {
-    return json(429, { ok: false, error: "contention", retryAfterMs: 1000 }, headersFor(ctx, state, cls, waited, { "x-hedge": "off", "x-ratelimit-reason": "contention", "retry-after": "1" }));
+    return json(429, { ok: false, error: "contention", retryAfterMs: 1000, decision: { ...decisionBase, hedge: "off" }, why: whyBase, state: explainTier(state, nowForWhy) }, headersFor(ctx, state, cls, waited, { "x-hedge": "off", "x-ratelimit-reason": "contention", "retry-after": "1" }));
   }
   if (admission.kind === "fail-fast") {
     const secs = Math.max(1, Math.ceil(admission.retryAfterMs / 1000));
-    return json(503, { ok: false, error: "circuit-open", retryAfterMs: admission.retryAfterMs, waitedMs: waited }, headersFor(ctx, state, cls, waited, { "x-hedge": "off", "x-ratelimit-reason": "circuit-open", "retry-after": String(secs) }));
+    return json(503, { ok: false, error: "circuit-open", retryAfterMs: admission.retryAfterMs, waitedMs: waited, decision: { ...decisionBase, hedge: "off" }, why: whyBase, state: explainTier(state, nowForWhy) }, headersFor(ctx, state, cls, waited, { "x-hedge": "off", "x-ratelimit-reason": "circuit-open", "retry-after": String(secs) }));
   }
   if (admission.kind === "reject") {
     const secs = Math.max(1, Math.ceil(admission.retryAfterMs / 1000));
-    return json(admission.status, { ok: false, error: admission.reason, retryAfterMs: admission.retryAfterMs, waitedMs: waited, waitBudgetMs: budget }, headersFor(ctx, state, cls, waited, { "x-hedge": "off", "x-ratelimit-reason": admission.reason, "retry-after": String(secs) }));
+    return json(admission.status, { ok: false, error: admission.reason, retryAfterMs: admission.retryAfterMs, waitedMs: waited, waitBudgetMs: budget, decision: { ...decisionBase, hedge: "off" }, why: whyBase, state: explainTier(state, nowForWhy) }, headersFor(ctx, state, cls, waited, { "x-hedge": "off", "x-ratelimit-reason": admission.reason, "retry-after": String(secs) }));
   }
 
   const probe = admission.kind === "probe";
@@ -92,22 +96,9 @@ export default async (req: Request, _context: Context) => {
     {
       ok: run.result.ok,
       upstream: { latencyMs: run.elapsedMs, timeout: run.result.timeout, params },
-      decision: {
-        tier: state.tier,
-        tierName: TIER_NAMES[state.tier],
-        breaker: state.breaker.state,
-        priority: cls.priority,
-        probabilities: cls.probabilities,
-        confidence: cls.confidence,
-        safeToRetry: cls.safeToRetry,
-        decider: cls.decider,
-        classified: c.cached ? "cache" : ctx.decider.kind,
-        waitedMs: waited,
-        waitBudgetMs: budget,
-        hedge: run.hedgeHeader,
-        probe,
-        totalMs: Date.now() - t0,
-      },
+      decision: { ...decisionBase, hedge: run.hedgeHeader, probe, totalMs: Date.now() - t0 },
+      why: [...whyBase, ...explainUpstream(run.result, run.elapsedMs, params, run.hedgeHeader, probe)],
+      state: explainTier(state, Date.now()),
     },
     headersFor(ctx, state, cls, waited, { "x-hedge": run.hedgeHeader, "x-upstream": run.result.ok ? "ok" : run.result.timeout ? "timeout" : "error", "x-probe": probe ? "1" : "0" }),
   );

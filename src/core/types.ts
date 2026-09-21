@@ -93,10 +93,29 @@ export interface ClassCacheEntry {
   readonly at: number;
 }
 
+export interface TierChange {
+  readonly at: number;
+  readonly from: Tier;
+  readonly to: Tier;
+  readonly breaker: BreakerStateName;
+  readonly decider: DeciderTag;
+  readonly reasons: readonly string[];
+}
+
+export interface LastEvaluation {
+  readonly at: number;
+  readonly signal: "escalate" | "clean" | "breaker";
+  readonly cleanWindows: number;
+  readonly reasons: readonly string[];
+  readonly samples: number;
+}
+
 export interface ServiceState {
   readonly version: 1;
   readonly tier: Tier;
   readonly tierChangedAt: number;
+  readonly tierHistory: readonly TierChange[];
+  readonly lastEvaluation: LastEvaluation | null;
   readonly breaker: Breaker;
   readonly pools: Pools;
   readonly telemetry: readonly Outcome[];
@@ -152,6 +171,8 @@ export function initialState(now: number): ServiceState {
     version: 1,
     tier: 0,
     tierChangedAt: now,
+    tierHistory: [],
+    lastEvaluation: null,
     breaker: { state: "CLOSED", openedAt: null, cooldownMs: BREAKER_CFG.initialCooldownMs, probeStartedAt: null },
     pools: fullPools(0, now),
     telemetry: [],

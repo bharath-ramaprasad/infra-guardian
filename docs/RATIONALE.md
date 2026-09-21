@@ -27,11 +27,38 @@ TypeSafe's Jev is a model that returns typed decisions with calibrated probabili
 
 ## What I would do with more time
 
-- Move the OPEN fail-fast path to an Edge Function so an open breaker costs no function invocation.
-- Shard the per-second counters and elect a per-window evaluator with a create-only lease, so the hot path never contends on one key.
-- Swap the store interface to Redis if Blobs latency becomes the bottleneck; the core and tests would not change.
-- Quorum hedging (2 of 3) for correctness checks against divergent replicas.
-- Feed Jev the job description and the current queue when deciding resume order, not just deferability at submission.
+**Make it a primitive any infra engineer can plug in, not a demo.** The code is already shaped for it, and the honest
+plan has three steps.
+
+What carries over unchanged: the policy engine in `src/core` (pure, clock-free, property-tested), the two seams that
+are already interfaces (a four-method store with compare-and-set, a three-method decider), and the product surface
+(the header contract, the `why`/`state` explanations, the job event history).
+
+What must change: the runtime model. The demo does one strong store read and two compare-and-set writes per request
+(about 100–300 ms) and keys state per visitor session. A gateway hot path needs microseconds and state keyed per
+protected dependency. So the service layer becomes in-process memory as the primary state with an optional shared
+store (Redis) for cross-instance agreement on the tier, which is the leases-and-sharded-counters design that was cut
+from v1 for demo scope. The simulated upstream becomes the function you wrap, and the browser-driven job loop becomes
+the user's own worker asking the guard before each chunk.
+
+1. **Library.** `createGuard({ name, decider, store })` exposing `admit(request)`, `wrap(fn)` to protect an outbound
+   call (the Resilience4j shape), `middleware()` for Hono and Express to protect inbound routes, `batch(job, chunkFn)`
+   for cooperative preemption inside the caller's worker, and `on(event)` so tier changes, breaker trips, preemptions,
+   and Jev bypasses feed Prometheus or OpenTelemetry. Ships with an in-process memory store and a Redis store. The
+   current demo becomes the first consumer and re-runs the same 19 live scenarios, which is the proof of pluggability.
+2. **Sidecar.** The same guard behind three endpoints (admit, outcome, status) in a container, with an Envoy
+   `ext_authz` adapter. That covers Go, Python, and Java services and any gateway that can call out, without a port of
+   the library per language.
+3. **Claude Code skill.** An `integrate-guardian` skill that reads a codebase, finds outbound dependency calls and
+   inbound routes, wires the wrapper or middleware with sensible class descriptions, and runs the verification. That is
+   the agent primitive an engineer would reach for; it depends on the library existing first.
+
+Jev's role survives the move and gets more interesting: in a real gateway the descriptions come from route metadata
+and request shape rather than typed text, the stress score reads real telemetry, and deferability can consider the
+live queue when ordering resumes, not just the description at submission.
+
+Smaller items on the same path: move the OPEN fail-fast branch to an edge function so an open breaker costs no
+invocation; quorum hedging (2 of 3) for correctness checks against divergent replicas.
 
 ## How AI was used **[owner]**
 

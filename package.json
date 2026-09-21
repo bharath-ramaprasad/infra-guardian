@@ -12,8 +12,13 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "check": "npm run typecheck && npm run lint && npm run format:check && npm test",
     "e2e": "node scripts/e2e.mjs",
-    "deploy": "netlify deploy --prod",
+    "deploy": "netlify deploy --prod --dir=public --functions=netlify/functions --skip-functions-cache",
     "audit": "npm audit --audit-level=high"
   },
   "dependencies": {
@@ -22,9 +27,15 @@
     "@typesafe-ai/sdk": "0.6.0"
   },
   "devDependencies": {
+    "@eslint/js": "10.0.1",
     "@types/node": "22.20.4",
+    "eslint": "10.11.0",
+    "eslint-config-prettier": "10.1.8",
     "fast-check": "4.10.2",
-    "typescript": "7.0.2",
+    "globals": "17.12.0",
+    "prettier": "3.9.8",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.70.0",
     "vitest": "5.0.1"
   }
 }

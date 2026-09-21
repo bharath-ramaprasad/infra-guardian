@@ -1,5 +1,5 @@
 import { TypeSafeClient, choice, noul, score, type EntryType } from "@typesafe-ai/sdk";
-import { JEV_BUDGET, type Priority } from "../core";
+import { JEV_BUDGET } from "../core";
 import { QUESTIONS, type ClassifyAnswer, type Decider, type ScoreAnswer, type StressInput } from "./decider";
 
 // Real Jev through Netlify's AI Gateway. One systemOne call per decision, hard per-attempt timeout, no SDK retries:
@@ -31,7 +31,7 @@ export class JevDecider implements Decider {
     );
     const p = answers.priority;
     return {
-      priority: p.choice as Priority,
+      priority: p.choice,
       probabilities: { critical: p.probabilities.critical, standard: p.probabilities.standard, bulk: p.probabilities.bulk },
       confidence: p.confidence,
       safeToRetry: answers.safeToRetry.noul,

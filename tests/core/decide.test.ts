@@ -1,13 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { decideAdmission, initialState, waitBudgetMs, type ClassCacheEntry, type ServiceState } from "../src/core";
+import { decideAdmission, initialState, waitBudgetMs, type ClassCacheEntry, type ServiceState } from "../../src/core";
 
 const now = 30_000_000;
-const critical: ClassCacheEntry = { priority: "critical", probabilities: { critical: 0.9, standard: 0.1, bulk: 0 }, confidence: 0.9, safeToRetry: 0.95, decider: "jev", at: now };
+const critical: ClassCacheEntry = {
+  priority: "critical",
+  probabilities: { critical: 0.9, standard: 0.1, bulk: 0 },
+  confidence: 0.9,
+  safeToRetry: 0.95,
+  decider: "jev",
+  at: now,
+};
 const bulk: ClassCacheEntry = { ...critical, priority: "bulk", probabilities: { critical: 0, standard: 0.2, bulk: 0.8 } };
 
 describe("admission decisions", () => {
   it("fails fast while OPEN and admits a single probe while HALF_OPEN", () => {
-    const open: ServiceState = { ...initialState(now), tier: 4, breaker: { state: "OPEN", openedAt: now - 1000, cooldownMs: 10_000, probeStartedAt: null } };
+    const open: ServiceState = {
+      ...initialState(now),
+      tier: 4,
+      breaker: { state: "OPEN", openedAt: now - 1000, cooldownMs: 10_000, probeStartedAt: null },
+    };
     const ff = decideAdmission({ state: open, now, cls: critical, idempotent: true, hedgeEnabled: true });
     expect(ff.kind).toBe("fail-fast");
     if (ff.kind === "fail-fast") expect(ff.retryAfterMs).toBe(9_000);

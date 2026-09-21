@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { initialState, jevGate, noteJevCall, noteJevError, noteJevSuccess } from "../src/core";
+import { initialState, jevGate, noteJevCall, noteJevError, noteJevSuccess } from "../../src/core";
 
 describe("Jev budget guard and inner breaker", () => {
   const now = 20_000_000;

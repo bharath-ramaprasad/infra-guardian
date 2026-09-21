@@ -47,7 +47,8 @@ export function deterministicSignal(s: TelemetrySummary): Signal {
 
 export function escalationReasons(s: TelemetrySummary): string[] {
   const r: string[] = [];
-  if (s.n >= THRESHOLDS.minSamples && s.errorRate >= THRESHOLDS.errorRate) r.push(`error rate ${(s.errorRate * 100).toFixed(0)}% over ${s.n}`);
+  if (s.n >= THRESHOLDS.minSamples && s.errorRate >= THRESHOLDS.errorRate)
+    r.push(`error rate ${(s.errorRate * 100).toFixed(0)}% over ${s.n}`);
   if (s.n >= THRESHOLDS.p95MinSamples && s.p95Ms >= THRESHOLDS.p95Ms) r.push(`p95 ${s.p95Ms} ms`);
   if (s.timeouts >= THRESHOLDS.timeouts) r.push(`${s.timeouts} timeouts`);
   return r;

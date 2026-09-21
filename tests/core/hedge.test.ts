@@ -1,9 +1,17 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { fullPools, hedgeDecision, type Priority, type Tier } from "../src/core";
+import { fullPools, hedgeDecision, type Priority, type Tier } from "../../src/core";
 
 describe("invariant 3: hedging needs all four gates", () => {
-  const base = { tier: 0 as Tier, pools: fullPools(0, 0), priority: "critical" as Priority, idempotent: true, safeToRetry: 0.95, p50Ms: 120, enabled: true };
+  const base = {
+    tier: 0 as Tier,
+    pools: fullPools(0, 0),
+    priority: "critical" as Priority,
+    idempotent: true,
+    safeToRetry: 0.95,
+    p50Ms: 120,
+    enabled: true,
+  };
 
   it("fires when every gate passes, with a bounded delay", () => {
     const d = hedgeDecision(base);
@@ -26,7 +34,13 @@ describe("invariant 3: hedging needs all four gates", () => {
   it("never fires at HARD_THROTTLE or above, whatever else is true", () => {
     fc.assert(
       fc.property(fc.integer({ min: 2, max: 4 }), fc.double({ min: 0, max: 1, noNaN: true }), fc.boolean(), (tier, safe, idem) => {
-        const d = hedgeDecision({ ...base, tier: tier as Tier, pools: { critical: 99, standard: 99, bulk: 99, refilledAt: 0 }, safeToRetry: safe, idempotent: idem });
+        const d = hedgeDecision({
+          ...base,
+          tier: tier as Tier,
+          pools: { critical: 99, standard: 99, bulk: 99, refilledAt: 0 },
+          safeToRetry: safe,
+          idempotent: idem,
+        });
         expect(d.allowed).toBe(false);
       }),
     );

@@ -1,6 +1,6 @@
 import type { Config } from "@netlify/functions";
 import { resumeOrder } from "../../src/core";
-import { DEFAULT_BATCH_PARAMS, stepJob } from "../../src/batchrun";
+import { DEFAULT_BATCH_PARAMS, stepJob } from "../../src/service";
 import { SESSIONS_KEY, ensureWindow, listJobs, loadState, makeCtx, type SessionEntry } from "../../src/service";
 import { resolveStore } from "../../src/store";
 

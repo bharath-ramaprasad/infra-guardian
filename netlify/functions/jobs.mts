@@ -39,18 +39,37 @@ export default async (req: Request, _context: Context) => {
   }
   await updateState(ctx, (cur, t) => {
     if (call.gated !== null) return { value: cur, result: null };
-    const jev = { ...cur.jev, minuteBucket: Math.floor(t / 60_000), minuteCount: (cur.jev.minuteBucket === Math.floor(t / 60_000) ? cur.jev.minuteCount : 0) + 1, dayBucket: Math.floor(t / 86_400_000), dayCount: (cur.jev.dayBucket === Math.floor(t / 86_400_000) ? cur.jev.dayCount : 0) + 1, totalCalls: cur.jev.totalCalls + 1, consecutiveErrors: call.error ? cur.jev.consecutiveErrors + 1 : 0 };
-    const last = call.answer ? { kind: "deferability" as const, at: t, latencyMs: call.latencyMs, answers: { description, ...call.answer }, decider } : cur.jev.last;
+    const jev = {
+      ...cur.jev,
+      minuteBucket: Math.floor(t / 60_000),
+      minuteCount: (cur.jev.minuteBucket === Math.floor(t / 60_000) ? cur.jev.minuteCount : 0) + 1,
+      dayBucket: Math.floor(t / 86_400_000),
+      dayCount: (cur.jev.dayBucket === Math.floor(t / 86_400_000) ? cur.jev.dayCount : 0) + 1,
+      totalCalls: cur.jev.totalCalls + 1,
+      consecutiveErrors: call.error ? cur.jev.consecutiveErrors + 1 : 0,
+    };
+    const last = call.answer
+      ? { kind: "deferability" as const, at: t, latencyMs: call.latencyMs, answers: { description, ...call.answer }, decider }
+      : cur.jev.last;
     const lastError = call.error ? { at: t, message: call.error.slice(0, 200), latencyMs: call.latencyMs } : cur.jev.lastError;
     return { value: { ...cur, jev: { ...jev, last, lastError }, updatedAt: t }, result: null };
   });
   const id = randomBytes(4).toString("hex");
-  const job: Job = { ...createJob(id, description, items, now), deferability, deferabilityConfidence: confidence, deferabilityDecider: decider };
+  const job: Job = {
+    ...createJob(id, description, items, now),
+    deferability,
+    deferabilityConfidence: confidence,
+    deferabilityDecider: decider,
+  };
   await ctx.store.set(jobKey(sid, id), job, { onlyIfNew: true });
   await addJobToIndex(ctx, id);
   await touchSession(ctx, now);
   console.info(JSON.stringify({ event: "job.submitted", sid, id, items, deferability, decider }));
-  return json(201, { job, jev: { decider, latencyMs: call.latencyMs, answer: call.answer } }, { "x-decider": decider, "x-jev": ctx.decider.kind });
+  return json(
+    201,
+    { job, jev: { decider, latencyMs: call.latencyMs, answer: call.answer } },
+    { "x-decider": decider, "x-jev": ctx.decider.kind },
+  );
 };
 
 export const config: Config = { path: "/api/jobs" };

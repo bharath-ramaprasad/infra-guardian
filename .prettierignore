@@ -1,0 +1,5 @@
+node_modules
+.netlify
+package-lock.json
+public/index.html
+docs/*.md

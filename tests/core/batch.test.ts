@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { admission, advanceCursor, cancel, createJob, initialState, markRunning, preempt, resumeOrder, type ServiceState } from "../src/core";
+import {
+  admission,
+  advanceCursor,
+  cancel,
+  createJob,
+  initialState,
+  markRunning,
+  preempt,
+  resumeOrder,
+  type ServiceState,
+} from "../../src/core";
 
 describe("invariant 4: cooperative preemption at chunk boundaries", () => {
   const t0 = 10_000_000;

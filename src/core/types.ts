@@ -19,7 +19,13 @@ export interface TierSpec {
 
 export const TIERS: Readonly<Record<Tier, TierSpec>> = {
   0: { name: "NORMAL", tokensPerSec: 50, shares: { critical: 0.4, standard: 0.4, bulk: 0.2 }, borrowing: true, batchChunksPerSec: 10 },
-  1: { name: "SOFT_THROTTLE", tokensPerSec: 30, shares: { critical: 0.5, standard: 0.35, bulk: 0.15 }, borrowing: true, batchChunksPerSec: 5 },
+  1: {
+    name: "SOFT_THROTTLE",
+    tokensPerSec: 30,
+    shares: { critical: 0.5, standard: 0.35, bulk: 0.15 },
+    borrowing: true,
+    batchChunksPerSec: 5,
+  },
   2: { name: "HARD_THROTTLE", tokensPerSec: 15, shares: { critical: 0.6, standard: 0.4, bulk: 0 }, borrowing: false, batchChunksPerSec: 0 },
   3: { name: "SHED", tokensPerSec: 5, shares: { critical: 1, standard: 0, bulk: 0 }, borrowing: false, batchChunksPerSec: 0 },
   4: { name: "OPEN", tokensPerSec: 0, shares: { critical: 0, standard: 0, bulk: 0 }, borrowing: false, batchChunksPerSec: 0 },
@@ -34,8 +40,23 @@ export const CONFIDENCE_GENERAL = 0.6;
 export const CONFIDENCE_SAFE_TO_RETRY = 0.7;
 export const THRESHOLDS = { errorRate: 0.5, minSamples: 10, p95Ms: 1500, p95MinSamples: 5, timeouts: 5, cleanWindowsToRecover: 2 } as const;
 export const BREAKER_CFG = { initialCooldownMs: 10_000, maxCooldownMs: 60_000, probeTimeoutMs: 5_000 } as const;
-export const BATCH_CFG = { chunkMs: 200, stepBudgetMs: 3_000, agingMs: 10_000, resumeStaggerMaxMs: 500, maxItems: 5_000, chunkSize: 5 } as const;
-export const JEV_BUDGET = { perMinute: 60, perDay: 3_000, errorsToOpen: 3, openMs: 30_000, timeoutMs: 800, classCacheMs: 60_000, classCacheMax: 32 } as const;
+export const BATCH_CFG = {
+  chunkMs: 200,
+  stepBudgetMs: 3_000,
+  agingMs: 10_000,
+  resumeStaggerMaxMs: 500,
+  maxItems: 5_000,
+  chunkSize: 5,
+} as const;
+export const JEV_BUDGET = {
+  perMinute: 60,
+  perDay: 3_000,
+  errorsToOpen: 3,
+  openMs: 30_000,
+  timeoutMs: 800,
+  classCacheMs: 60_000,
+  classCacheMax: 32,
+} as const;
 export const UPSTREAM_CFG = { timeoutMs: 2_000, maxLatencyMs: 2_000, tailMultiplier: 5 } as const;
 export const TELEMETRY_RING = 50;
 
@@ -179,7 +200,18 @@ export function initialState(now: number): ServiceState {
     window: Math.floor(now / WINDOW_MS),
     cleanWindows: 0,
     yieldRequestedAt: null,
-    jev: { off: false, minuteBucket: 0, minuteCount: 0, dayBucket: 0, dayCount: 0, consecutiveErrors: 0, openUntil: null, totalCalls: 0, last: null, lastError: null },
+    jev: {
+      off: false,
+      minuteBucket: 0,
+      minuteCount: 0,
+      dayBucket: 0,
+      dayCount: 0,
+      consecutiveErrors: 0,
+      openUntil: null,
+      totalCalls: 0,
+      last: null,
+      lastError: null,
+    },
     classCache: {},
     decider: "deterministic",
     lastStress: null,

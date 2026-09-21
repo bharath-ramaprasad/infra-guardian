@@ -1,4 +1,14 @@
-import { BATCH_CFG, CRITICAL_RESERVE_SHARE, WINDOW_MS, YIELD_TTL_MS, poolCapacity, tierSpec, type Job, type JobEvent, type ServiceState } from "./types";
+import {
+  BATCH_CFG,
+  CRITICAL_RESERVE_SHARE,
+  WINDOW_MS,
+  YIELD_TTL_MS,
+  poolCapacity,
+  tierSpec,
+  type Job,
+  type JobEvent,
+  type ServiceState,
+} from "./types";
 
 // Cooperative preemption at chunk boundaries. The cursor is the checkpoint; it only ever moves forward.
 
@@ -58,7 +68,11 @@ function withEvent(job: Job, ev: JobEvent): Job {
 }
 
 /** Decide whether this job may process a chunk right now, and whether it is an aging-guard chunk. */
-export function admission(job: Job, state: ServiceState, now: number): { run: boolean; aging: boolean; reason: PreemptReason | "resume-wait" | "done" | "cancelled" | null } {
+export function admission(
+  job: Job,
+  state: ServiceState,
+  now: number,
+): { run: boolean; aging: boolean; reason: PreemptReason | "resume-wait" | "done" | "cancelled" | null } {
   if (job.state === "DONE") return { run: false, aging: false, reason: "done" };
   if (job.state === "CANCELLED") return { run: false, aging: false, reason: "cancelled" };
   const reason = preemptReason(state, now);

@@ -1,4 +1,4 @@
-import { UPSTREAM_CFG } from "./core";
+import { UPSTREAM_CFG } from "../core";
 
 // The thing being protected. In-process, so the caller controls its failure rate, latency, and tail
 // from query parameters; every parameter is clamped. It honours AbortSignal so hedge losers stop work.
@@ -43,7 +43,12 @@ function sleep(ms: number, signal?: AbortSignal): Promise<boolean> {
   });
 }
 
-export async function callUpstream(p: UpstreamParams, signal?: AbortSignal, rand: () => number = Math.random, workMs = 0): Promise<UpstreamResult> {
+export async function callUpstream(
+  p: UpstreamParams,
+  signal?: AbortSignal,
+  rand: () => number = Math.random,
+  workMs = 0,
+): Promise<UpstreamResult> {
   const started = Date.now();
   const slow = rand() < p.tail;
   const planned = Math.round(p.latency * (slow ? UPSTREAM_CFG.tailMultiplier : 1)) + workMs;

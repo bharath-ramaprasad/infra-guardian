@@ -1,5 +1,5 @@
-import { sleep } from "./http";
-import { callUpstream, type UpstreamParams, type UpstreamResult } from "./upstream";
+import { sleep } from "../http";
+import { callUpstream, type UpstreamParams, type UpstreamResult } from "../upstream";
 
 // The hedge race: copy 1 now; copy 2 only if copy 1 has not returned by `delayMs`; first response wins; loser aborted.
 

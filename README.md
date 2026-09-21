@@ -1,6 +1,6 @@
 # infra-guardian
 
-A circuit breaker, rate limiter, and batch preemptor whose *policy* is advised by [TypeSafe Jev](https://typesafe.ai) and whose *guarantees* are enforced by code. It degrades predictably under stress: one tier at a time, with every response explaining why.
+A circuit breaker, rate limiter, and batch preemptor whose _policy_ is advised by [TypeSafe Jev](https://typesafe.ai) and whose _guarantees_ are enforced by code. It degrades predictably under stress: one tier at a time, with every response explaining why.
 
 **Live demo:** https://infra-guardian.netlify.app — open it, type what a request is for, put the upstream under load, watch the ladder.
 
@@ -48,14 +48,14 @@ curl -s -X POST "$U/api/reset?s=$S&jev=off" | jq
 
 ### Endpoints
 
-| Method | Path | Purpose |
-|---|---|---|
-| POST/GET | `/api/protected?s=&fail=&latency=&tail=&hedge=` | The guarded call. Body `{ description, idempotencyKey? }`. `fail` 0–1, `latency` ≤ 2000 ms, `tail` share of calls that take 5× longer. |
-| GET | `/api/status?s=` | Tier, breaker, pools, window summary, tier-change history with reasons, `explain[]`, Jev budget and last answers, classifications, jobs, counters. |
-| POST | `/api/reset?s=&jev=on|off` | Reset the session (once per 10 s). `jev=off` keeps Jev off for the session. |
-| POST/GET | `/api/jobs?s=` | Submit `{ description, items }` or list jobs. |
-| POST | `/api/jobs/:id/step?s=` | Process chunks for up to 3 s, yielding on pressure. The page polls this; a scheduled tick also steps parked jobs. |
-| POST | `/api/jobs/:id/cancel?s=` | Cancel. |
+| Method   | Path                                            | Purpose                                                                                                                                            |
+| -------- | ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST/GET | `/api/protected?s=&fail=&latency=&tail=&hedge=` | The guarded call. Body `{ description, idempotencyKey? }`. `fail` 0–1, `latency` ≤ 2000 ms, `tail` share of calls that take 5× longer.             |
+| GET      | `/api/status?s=`                                | Tier, breaker, pools, window summary, tier-change history with reasons, `explain[]`, Jev budget and last answers, classifications, jobs, counters. |
+| POST     | `/api/reset?s=&jev=on                           | off`                                                                                                                                               | Reset the session (once per 10 s). `jev=off` keeps Jev off for the session. |
+| POST/GET | `/api/jobs?s=`                                  | Submit `{ description, items }` or list jobs.                                                                                                      |
+| POST     | `/api/jobs/:id/step?s=`                         | Process chunks for up to 3 s, yielding on pressure. The page polls this; a scheduled tick also steps parked jobs.                                  |
+| POST     | `/api/jobs/:id/cancel?s=`                       | Cancel.                                                                                                                                            |
 
 ### Response headers
 
@@ -65,8 +65,7 @@ curl -s -X POST "$U/api/reset?s=$S&jev=off" | jq
 
 ```bash
 npm install
-npm test              # 33 unit and property tests on the pure core (fast-check for the invariants)
-npm run typecheck
+npm run check         # typecheck + lint + format + 36 unit and property tests (fast-check for the invariants)
 npm run e2e -- https://infra-guardian.netlify.app   # live scenarios: ladder, breaker, recovery, preemption, hedging, jev-off
 npm run dev           # netlify dev; JEV_FAKE=1 uses the keyword fake instead of Jev
 npm run deploy        # netlify deploy --prod
@@ -77,14 +76,20 @@ Stack: Node 22, TypeScript, Netlify Functions v2 and Scheduled Functions, Netlif
 ## Layout
 
 ```
-src/core/        pure policy: ladder, breaker, pools, hedge gates, batch preemption, Jev guard, admission
-src/jev/         Decider interface, real Jev client, keyword fake
-src/store/       Store interface, Blobs with CAS, memory fallback
-src/service.ts   orchestration: window evaluation, classification with claim, outcome recording
-src/batchrun.ts  one batch step
-netlify/functions/  protected, status, reset, jobs, job, tick
-public/          the demo page
-scripts/e2e.mjs  live verification
-tests/           vitest + fast-check
-docs/            plan, control plane, data plane, rationale
+src/core/            pure policy, no I/O: ladder, breaker, class pools, hedge gates, batch preemption, Jev guard, admission
+src/jev/             Decider interface, real Jev client, keyword fake, the four question texts
+src/store/           Store interface, Netlify Blobs with etag compare-and-set, memory fallback
+src/service/         orchestration: context, window evaluation, classification with claim, outcomes, yield flag, jobs,
+                     batch step, hedge race, plain-language explanations
+src/upstream/        the simulated upstream being protected
+src/http/            request parsing, validation, JSON responses with the header contract
+netlify/functions/   thin handlers: protected, status, reset, jobs, job, tick
+public/              the demo page, no build step
+scripts/e2e.mjs      live verification
+tests/core, tests/service   vitest + fast-check
+docs/                plan, control plane, data plane, rationale
 ```
+
+Dependency direction: functions → service → (core, jev, store, upstream, http). `src/core` imports nothing outside itself and never reads the clock; `now` is always passed in.
+
+Quality gates: `npm run check` runs typecheck, ESLint (typescript-eslint type-checked rules), Prettier, and the tests.

@@ -19,7 +19,11 @@ export default async (req: Request, _context: Context) => {
   const now = Date.now();
   if (now - lastReset < MIN_INTERVAL_MS) {
     const secs = Math.ceil((MIN_INTERVAL_MS - (now - lastReset)) / 1000);
-    return json(429, { ok: false, error: "reset-too-soon", retryAfterMs: MIN_INTERVAL_MS - (now - lastReset) }, { "retry-after": String(secs) });
+    return json(
+      429,
+      { ok: false, error: "reset-too-soon", retryAfterMs: MIN_INTERVAL_MS - (now - lastReset) },
+      { "retry-after": String(secs) },
+    );
   }
   const idx = await ctx.store.get<string[]>(jobsIndexKey(sid));
   for (const id of idx?.value ?? []) await ctx.store.delete(jobKey(sid, id));

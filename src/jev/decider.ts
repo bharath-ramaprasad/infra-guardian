@@ -34,17 +34,23 @@ export const QUESTIONS = {
   priority: {
     instructions: "Classify the priority of this API request for load shedding. Under stress, lower classes are shed first.",
     criteria: {
-      critical: "Health checks, payments, order or booking confirmations, a person actively waiting on the result, idempotent retries of something that already succeeded",
+      critical:
+        "Health checks, payments, order or booking confirmations, a person actively waiting on the result, idempotent retries of something that already succeeded",
       standard: "Ordinary interactive user requests with no special urgency",
       bulk: "Exports, reports, crawls, prefetch, backfills, analytics, batch work, or anything marked low priority or unattended",
     },
   },
   safeToRetry: {
-    instructions: "Is it safe to execute this request more than once, so a duplicate copy could be sent to reduce latency? Money movement, sending messages, or anything that must happen exactly once is not safe.",
-    criteria: { true: "Read-only, idempotent, or naturally deduplicated", false: "Has side effects that must not repeat: charges, transfers, sends, creates without an idempotency key" },
+    instructions:
+      "Is it safe to execute this request more than once, so a duplicate copy could be sent to reduce latency? Money movement, sending messages, or anything that must happen exactly once is not safe.",
+    criteria: {
+      true: "Read-only, idempotent, or naturally deduplicated",
+      false: "Has side effects that must not repeat: charges, transfers, sends, creates without an idempotency key",
+    },
   },
   stress: {
-    instructions: "How stressed is the upstream service, given the last window of outcomes, the previous window, and the raw recent samples? Judge the trend, not just the latest number.",
+    instructions:
+      "How stressed is the upstream service, given the last window of outcomes, the previous window, and the raw recent samples? Judge the trend, not just the latest number.",
     criteria: [
       "Healthy: errors under 5%, latency stable",
       "Warming: latency rising or a few errors, trend flat",

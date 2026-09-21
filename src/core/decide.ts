@@ -2,7 +2,15 @@ import { advanceBreaker, cooldownRemainingMs, tryAdmitProbe } from "./breaker";
 import { hedgeDecision, type HedgeDecision } from "./hedge";
 import { hasCapacity, refillPools, takeTokens } from "./pools";
 import { summarize } from "./telemetry";
-import { CRITICAL_RESERVE_SHARE, WAIT_BUDGET_MS, WINDOW_MS, poolCapacity, type ClassCacheEntry, type Priority, type ServiceState } from "./types";
+import {
+  CRITICAL_RESERVE_SHARE,
+  WAIT_BUDGET_MS,
+  WINDOW_MS,
+  poolCapacity,
+  type ClassCacheEntry,
+  type Priority,
+  type ServiceState,
+} from "./types";
 
 // One admission attempt for an interactive request. Waiting between attempts is the caller's job (it is I/O).
 
@@ -18,7 +26,13 @@ export type Admission =
   | { readonly kind: "fail-fast"; readonly retryAfterMs: number; readonly state: ServiceState }
   | { readonly kind: "probe"; readonly state: ServiceState }
   | { readonly kind: "admit"; readonly from: Priority; readonly hedge: HedgeDecision; readonly state: ServiceState }
-  | { readonly kind: "reject"; readonly status: 429 | 503; readonly reason: "pool-empty" | "shed"; readonly retryAfterMs: number; readonly state: ServiceState };
+  | {
+      readonly kind: "reject";
+      readonly status: 429 | 503;
+      readonly reason: "pool-empty" | "shed";
+      readonly retryAfterMs: number;
+      readonly state: ServiceState;
+    };
 
 export function decideAdmission(i: AdmissionInput): Admission {
   const { now, cls } = i;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { advanceBreaker, cooldownRemainingMs, recordProbe, tripBreaker, tryAdmitProbe, type Breaker } from "../src/core";
+import { advanceBreaker, cooldownRemainingMs, recordProbe, tripBreaker, tryAdmitProbe, type Breaker } from "../../src/core";
 
 const closed: Breaker = { state: "CLOSED", openedAt: null, cooldownMs: 10_000, probeStartedAt: null };
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { fullPools, hasCapacity, poolCapacity, refillPools, takeTokens } from "../src/core";
+import { fullPools, hasCapacity, poolCapacity, refillPools, takeTokens } from "../../src/core";
 
 describe("class pools", () => {
   it("sizes pools by tier share", () => {

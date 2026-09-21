@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { runHedged } from "../src/hedgerun";
+import { runHedged } from "../../src/service";
 
 // rand() is consulted twice per upstream call: the tail draw before the sleep, the failure draw after it.
 // Two overlapping copies therefore consume: copy1 tail, copy2 tail, then each failure draw as it completes.

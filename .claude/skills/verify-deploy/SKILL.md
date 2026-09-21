@@ -8,6 +8,7 @@ description: Deploy infra-guardian to Netlify production and prove the deployed 
 Goal: a green, evidence-backed verification of the production deployment. Never report success without the evidence below.
 
 ## Steps
+
 1. Preconditions: `npm run typecheck` and `npm test` are green. If not, stop and fix first.
 2. Deploy: `npm run deploy` (netlify deploy --prod). Capture the production URL from the output.
 3. Spawn an independent `general-purpose` subagent with this brief: "Run `npm run e2e -- <URL>` in the repo, then curl `<URL>/api/status?s=verify` and `<URL>/api/protected?s=verify` (POST, JSON body `{"description":"health check"}`). Report every status code, the full set of `x-*` and `retry-after` headers, timings, and the e2e script's pass/fail per scenario. Do not fix anything; report only."

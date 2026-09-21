@@ -1,6 +1,17 @@
 import { describe, expect, it } from "vitest";
 import fc from "fast-check";
-import { applyProbeResult, clampStep, evaluateWindow, initialState, proposeTier, recordOutcome, WINDOW_MS, type Outcome, type ServiceState, type Tier } from "../src/core";
+import {
+  applyProbeResult,
+  clampStep,
+  evaluateWindow,
+  initialState,
+  proposeTier,
+  recordOutcome,
+  WINDOW_MS,
+  type Outcome,
+  type ServiceState,
+  type Tier,
+} from "../../src/core";
 
 const tierArb = fc.integer({ min: 0, max: 4 }).map((n) => n as Tier);
 
@@ -17,7 +28,10 @@ describe("invariant 1: tier moves at most one step per window", () => {
         tierArb,
         fc.constantFrom("escalate", "clean"),
         fc.integer({ min: 0, max: 5 }),
-        fc.option(fc.record({ score: fc.double({ min: 0, max: 4, noNaN: true }), confidence: fc.double({ min: 0, max: 1, noNaN: true }) }), { nil: null }),
+        fc.option(
+          fc.record({ score: fc.double({ min: 0, max: 4, noNaN: true }), confidence: fc.double({ min: 0, max: 1, noNaN: true }) }),
+          { nil: null },
+        ),
         (current, signal, clean, jev) => {
           const { proposal } = proposeTier(current, signal, clean, jev);
           const next = clampStep(proposal, current);
@@ -99,7 +113,11 @@ describe("recovery walks down one step per two clean windows", () => {
 
   it("probe success reopens at SHED, probe failure doubles the cooldown", () => {
     const now = 6_000_000;
-    let state: ServiceState = { ...initialState(now), tier: 4, breaker: { state: "HALF_OPEN", openedAt: now - 10_000, cooldownMs: 10_000, probeStartedAt: now } };
+    const state: ServiceState = {
+      ...initialState(now),
+      tier: 4,
+      breaker: { state: "HALF_OPEN", openedAt: now - 10_000, cooldownMs: 10_000, probeStartedAt: now },
+    };
     const failed = applyProbeResult(state, false, now);
     expect(failed.breaker.state).toBe("OPEN");
     expect(failed.breaker.cooldownMs).toBe(20_000);

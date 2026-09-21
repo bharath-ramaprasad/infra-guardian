@@ -1,7 +1,7 @@
 import type { Config, Context } from "@netlify/functions";
 import { BATCH_CFG, TIER_NAMES, cancel } from "../../src/core";
 import { badRequest, json, sessionId } from "../../src/http";
-import { stepJob } from "../../src/batchrun";
+import { stepJob } from "../../src/service";
 import { jobKey, makeCtx, updateJob } from "../../src/service";
 import { clampUpstreamParams } from "../../src/upstream";
 import type { Job } from "../../src/core";
@@ -28,13 +28,23 @@ export default async (req: Request, context: Context) => {
     return job ? json(200, { job }, { "x-job": job.state.toLowerCase() }) : json(404, { error: "not found" });
   }
 
-  const params = clampUpstreamParams({ fail: url.searchParams.get("fail"), latency: url.searchParams.get("latency"), tail: url.searchParams.get("tail") });
+  const params = clampUpstreamParams({
+    fail: url.searchParams.get("fail"),
+    latency: url.searchParams.get("latency"),
+    tail: url.searchParams.get("tail"),
+  });
   const r = await stepJob(ctx, id, params, BATCH_CFG.stepBudgetMs);
   if (!r.job) return json(404, { error: "not found" });
   return json(
     200,
     { job: r.job, step: { chunks: r.chunks, stopReason: r.stopReason }, tier: r.state.tier, tierName: TIER_NAMES[r.state.tier] },
-    { "x-job": r.job.state.toLowerCase(), "x-tier": `${r.state.tier} ${TIER_NAMES[r.state.tier]}`, "x-breaker": r.state.breaker.state.toLowerCase().replace("_", "-"), "x-step-stop": r.stopReason, "x-store": ctx.degraded ? "degraded" : "ok" },
+    {
+      "x-job": r.job.state.toLowerCase(),
+      "x-tier": `${r.state.tier} ${TIER_NAMES[r.state.tier]}`,
+      "x-breaker": r.state.breaker.state.toLowerCase().replace("_", "-"),
+      "x-step-stop": r.stopReason,
+      "x-store": ctx.degraded ? "degraded" : "ok",
+    },
   );
 };
 

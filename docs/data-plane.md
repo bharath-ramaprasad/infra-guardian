@@ -125,6 +125,10 @@ admission race is exactly the signal batch work must not miss. A plain last-writ
 
 ## 5. Response header contract
 
+Beyond the headers, every `/api/protected` response body carries `why[]` (why this response: classification, admission,
+hedge, upstream outcome) and `state[]` (where the system was: tier, last change and its reasons, last window, breaker).
+`/api/status` carries `tierHistory[]` (last 12 tier changes with reasons and decider) and `explain[]`.
+
 Every data-plane response carries these, so the behaviour is inspectable from curl alone.
 
 | Header                  | Values                                                                                   |

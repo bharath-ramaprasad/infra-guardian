@@ -15,6 +15,8 @@ Built for the Anthropic SWE take-home, theme 3 (systems and reliability). Design
 - **Batch preemption.** Batch jobs run in chunks with a checkpointed cursor. A critical request dipping into the critical reserve raises a yield flag; the job yields at the next chunk boundary and resumes from its cursor when pressure clears. An aging guard prevents starvation.
 - **Jev as advisor, code as authority.** Jev answers four typed questions: request priority (choice), safe to retry (noul), upstream stress (score), and job deferability (score). Its answers carry probabilities and confidence. Low confidence is ignored, it can raise caution but never lower it below the deterministic rule, and it runs under a budget guard and an inner breaker. When any of that trips, the deterministic policy runs and `x-decider` says so.
 
+- **Every decision explains itself.** Responses carry headers plus `why[]` and `state[]`: plain-language reasons built from the same state the decision used. Status exposes a tier-change history with the reason for each step. The page's details card shows all of it for any request you click.
+
 Every visitor gets an isolated session namespace (`?s=`), so reviewers never see each other's stress.
 
 ## Try it with curl
@@ -49,7 +51,7 @@ curl -s -X POST "$U/api/reset?s=$S&jev=off" | jq
 | Method | Path | Purpose |
 |---|---|---|
 | POST/GET | `/api/protected?s=&fail=&latency=&tail=&hedge=` | The guarded call. Body `{ description, idempotencyKey? }`. `fail` 0–1, `latency` ≤ 2000 ms, `tail` share of calls that take 5× longer. |
-| GET | `/api/status?s=` | Tier, breaker, pools, window summary, Jev budget and last answers, classifications, jobs, counters. |
+| GET | `/api/status?s=` | Tier, breaker, pools, window summary, tier-change history with reasons, `explain[]`, Jev budget and last answers, classifications, jobs, counters. |
 | POST | `/api/reset?s=&jev=on|off` | Reset the session (once per 10 s). `jev=off` keeps Jev off for the session. |
 | POST/GET | `/api/jobs?s=` | Submit `{ description, items }` or list jobs. |
 | POST | `/api/jobs/:id/step?s=` | Process chunks for up to 3 s, yielding on pressure. The page polls this; a scheduled tick also steps parked jobs. |

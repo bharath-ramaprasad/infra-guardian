@@ -80,20 +80,35 @@ async function scenarioClassification() {
 
 async function scenarioLadderAndBreaker() {
   const s = sid("ladder");
+  // Sample the tier on its own 1 s cadence so no 5 s window can pass unobserved while requests are in flight.
   const tiers = [];
+  let sampling = true;
+  let degraded = 0;
+  const sampler = (async () => {
+    while (sampling) {
+      const st = await status(s);
+      if (st.json) {
+        if (st.json.store === "degraded") degraded++;
+        if (tiers.length === 0 || tiers[tiers.length - 1] !== st.json.tier) tiers.push(st.json.tier);
+        if (st.json.breaker?.state === "OPEN") break;
+      }
+      await sleep(1000);
+    }
+  })();
   const t0 = Date.now();
   let open = false;
   // Drive 100% upstream failures; expect one step per 5 s window, never more.
   while (Date.now() - t0 < 45_000 && !open) {
-    await Promise.all(Array.from({ length: 12 }, () => protectedReq(s, "health check", "&fail=1&latency=30")));
+    await Promise.all(Array.from({ length: 10 }, () => protectedReq(s, "health check", "&fail=1&latency=30")));
     const st = await status(s);
-    tiers.push(st.json?.tier);
     if (st.json?.breaker?.state === "OPEN") open = true;
-    await sleep(2500);
+    await sleep(1000);
   }
+  sampling = false;
+  await sampler;
   let monotoneStep = true;
   for (let i = 1; i < tiers.length; i++) if (Math.abs(tiers[i] - tiers[i - 1]) > 1) monotoneStep = false;
-  record("ladder climbs at most one step per window and trips the breaker", monotoneStep && open, `tiers=${tiers.join(",")} open=${open} in ${((Date.now() - t0) / 1000).toFixed(0)}s`);
+  record("ladder climbs at most one step per window and trips the breaker", monotoneStep && open, `tier changes=${tiers.join(",")} open=${open} in ${((Date.now() - t0) / 1000).toFixed(0)}s${degraded ? ` (store degraded on ${degraded} samples)` : ""}`);
   if (!open) return;
   // Fail-fast: with a 2 s upstream latency requested, an OPEN breaker must answer far sooner without calling upstream.
   const ff = await protectedReq(s, "health check", "&latency=2000");
@@ -105,16 +120,19 @@ async function scenarioLadderAndBreaker() {
   const afterProbe = await status(s);
   record("single half-open probe reopens the ladder at SHED", probe.headers["x-probe"] === "1" && afterProbe.json?.tier === 3 && afterProbe.json?.breaker?.state === "CLOSED", `probe=${probe.headers["x-probe"]} status=${probe.status} tier=${afterProbe.json?.tier} breaker=${afterProbe.json?.breaker?.state}`);
   const walk = [afterProbe.json?.tier];
+  let walkDegraded = 0;
   const t1 = Date.now();
-  while (Date.now() - t1 < 40_000) {
-    await sleep(5_100);
+  while (Date.now() - t1 < 45_000) {
+    await sleep(2_000);
     const st = await status(s);
-    walk.push(st.json?.tier);
-    if (st.json?.tier === 0) break;
+    if (!st.json) continue;
+    if (st.json.store === "degraded") walkDegraded++;
+    if (walk[walk.length - 1] !== st.json.tier) walk.push(st.json.tier);
+    if (st.json.tier === 0) break;
   }
   let down = true;
   for (let i = 1; i < walk.length; i++) if (walk[i] > walk[i - 1] || walk[i - 1] - walk[i] > 1) down = false;
-  record("recovery walks down one step at a time to NORMAL", down && walk[walk.length - 1] === 0, `tiers=${walk.join(",")}`);
+  record("recovery walks down one step at a time to NORMAL", down && walk[walk.length - 1] === 0, `tier changes=${walk.join(",")}${walkDegraded ? ` (store degraded on ${walkDegraded} samples)` : ""}`);
 }
 
 async function scenarioPreemption() {

@@ -83,7 +83,7 @@ Budget guard: ≤ 60 Jev calls/min, ≤ 3000/day; 3 consecutive errors → skip 
 - `client/<hash(ip+ua)>`: bucket, history (20), penaltyUntil, cachedPriority. CAS, ≤ 3 retries.
 - `job/<id>`: as above. CAS, ≤ 3 retries; a step that loses CAS 3 times exits and the next poll retries.
 - Window evaluation runs inside whichever request or tick first sees `lastWindow < currentWindow`, as part of its CAS update.
-- Blobs unreachable → instance-cached state or default tier 1, in-memory bucket, `x-store: degraded`.
+- Blobs unreachable → in-memory fallback for that invocation only, `x-store: degraded`; the Blobs client is created per invocation because the runtime's Blobs token is short-lived and a cached client fails with "Token expired" on warm instances (found by the live verifier).
 
 ## 5. Endpoints
 - `POST /api/protected?fail=&latency=` — interactive path; simulated upstream in-process (caps: fail ≤ 1, latency ≤ 2000).

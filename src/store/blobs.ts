@@ -2,8 +2,10 @@ import { getStore } from "@netlify/blobs";
 import { MemoryStore } from "./memory";
 import type { SetOptions, SetResult, Store, StoredValue } from "./store";
 
-// Netlify Blobs with strong consistency. If Blobs is unreachable the instance degrades to memory
-// and the caller reports `x-store: degraded`; nothing is swallowed silently.
+// Netlify Blobs with strong consistency. The client is created per invocation on purpose: the runtime injects a
+// short-lived token per request, and a cached client keeps a stale one until the warm instance dies (seen in
+// production as "Failed to decode token: Token expired"). If Blobs is unreachable for this invocation the instance
+// degrades to memory for this call only and the caller reports `x-store: degraded`; the next invocation probes again.
 
 const STORE_NAME = "infra-guardian";
 
@@ -44,16 +46,15 @@ export interface ResolvedStore {
 }
 
 let fallback: MemoryStore | null = null;
-let blobs: BlobsStore | null = null;
 
-/** Probe Blobs once per instance; on failure use a per-instance memory store and say so. */
+/** Probe Blobs for this invocation; on failure use the per-instance memory store and say so. */
 export async function resolveStore(): Promise<ResolvedStore> {
   if (process.env.GUARDIAN_STORE === "memory") {
     fallback ??= new MemoryStore();
     return { store: fallback, degraded: false, reason: "memory store by configuration" };
   }
   try {
-    blobs ??= new BlobsStore();
+    const blobs = new BlobsStore();
     await blobs.get("__probe__");
     return { store: blobs, degraded: false, reason: null };
   } catch (err) {

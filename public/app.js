@@ -208,7 +208,7 @@
     bucket(Math.floor(Date.now() / 1000)).tier = status.tier;
     $("tier").textContent = `${status.tier} ${status.tierName}`;
     $("tier").className = `big badge t${status.tier}`;
-    $("tierSince").textContent = `since ${Math.round((status.now - status.tierSince) / 1000)} s · ${status.tierSpec.tokensPerSec} tokens/s, borrowing ${status.tierSpec.borrowing ? "on" : "off"}`;
+    $("tierSince").textContent = `since ${Math.round((status.now - status.tierSince) / 1000)} s · ${status.tierSpec.tokensPerSec} tokens/s, borrowing ${status.tierSpec.borrowing ? "on" : "off"}${status.store === "degraded" ? " · STORE DEGRADED (in-memory fallback)" : ""}`;
     $("breaker").textContent = status.breaker.state;
     $("breakerHint").textContent = status.breaker.state === "OPEN" ? `probe in ${Math.ceil(status.breaker.cooldownRemainingMs / 1000)} s (cooldown ${status.breaker.cooldownMs / 1000} s)` : status.breaker.state === "HALF_OPEN" ? "waiting for one probe" : `last window: ${status.window.last.n} calls, ${Math.round(status.window.last.errorRate * 100)}% errors, p95 ${status.window.last.p95Ms} ms`;
     $("decider").textContent = status.decider;

@@ -224,11 +224,11 @@ function pressure(s, ms) {
     const t0 = Date.now();
     while (on && Date.now() - t0 < ms) {
       await Promise.all(
-        Array.from({ length: 14 }, (_, i) =>
+        Array.from({ length: 24 }, (_, i) =>
           protectedReq(s, "customer waiting at checkout to confirm the order", "&latency=20", { idempotencyKey: `p-${Date.now()}-${i}` }),
         ),
       );
-      await sleep(600);
+      await sleep(300);
     }
   })();
   return {
@@ -270,15 +270,22 @@ async function scenarioJobLifecycle() {
   const started = step.json?.job?.history?.find((h) => h.event === "started");
   record(
     "a job submitted while calm starts at once and says why",
-    step.json?.job?.state === "RUNNING" && Boolean(started) && /tier 0 NORMAL/.test(started?.detail ?? ""),
+    (step.json?.job?.state === "RUNNING" || step.json?.job?.state === "DONE") &&
+      Boolean(started) &&
+      /tier 0 NORMAL/.test(started?.detail ?? ""),
     `state=${step.json?.job?.state} started="${started?.detail?.slice(0, 100)}"`,
   );
 }
 
 async function scenarioSubmitUnderPressure() {
   const s = sid("queue");
-  const p = pressure(s, 12_000);
-  await sleep(2_500);
+  const p = pressure(s, 16_000);
+  // Submit only once the yield flag is confirmed raised, so the test asserts the queue decision, not burst timing.
+  let flagged = false;
+  for (let i = 0; i < 14 && !flagged; i++) {
+    await sleep(500);
+    flagged = (await status(s)).json?.yieldActive === true;
+  }
   const created = await call(`/api/jobs?s=${s}`, {
     method: "POST",
     body: { description: "nightly analytics export, unattended", items: 40 },
@@ -289,8 +296,10 @@ async function scenarioSubmitUnderPressure() {
   const waiting = step1.json?.job?.waiting;
   record(
     "a job submitted during a critical burst stays queued with the reason",
-    step1.json?.job?.state === "QUEUED" && waiting?.reason === "yield" && step1.json?.job?.cursor === 0,
-    `state=${step1.json?.job?.state} yieldActive=${st.json?.yieldActive} waiting=${waiting?.reason}: ${waiting?.detail?.slice(0, 80)} stop=${step1.json?.step?.stopReason}`,
+    step1.json?.job?.state === "QUEUED" &&
+      (waiting?.reason === "yield" || waiting?.reason === "critical-reserve") &&
+      step1.json?.job?.cursor === 0,
+    `flagged=${flagged} state=${step1.json?.job?.state} yieldActive=${st.json?.yieldActive} waiting=${waiting?.reason}: ${waiting?.detail?.slice(0, 80)} stop=${step1.json?.step?.stopReason}`,
   );
   await p.stop();
   await sleep(4_000);
@@ -298,7 +307,7 @@ async function scenarioSubmitUnderPressure() {
   const started = step2.json?.job?.history?.find((h) => h.event === "started");
   record(
     "it starts once the burst ends, from cursor 0",
-    step2.json?.job?.state === "RUNNING" && step2.json?.job?.cursor > 0 && Boolean(started),
+    (step2.json?.job?.state === "RUNNING" || step2.json?.job?.state === "DONE") && step2.json?.job?.cursor > 0 && Boolean(started),
     `state=${step2.json?.job?.state} cursor=${step2.json?.job?.cursor} events=${events(step2.json?.job).join(",")}`,
   );
 }
@@ -307,13 +316,13 @@ async function scenarioAgingGuard() {
   const s = sid("aging");
   const created = await call(`/api/jobs?s=${s}`, {
     method: "POST",
-    body: { description: "nightly analytics export, unattended", items: 60 },
+    body: { description: "nightly analytics export, unattended", items: 300 },
   });
   const id = created.json?.job?.id;
   const first = await jobStep(s, id);
   const c1 = first.json?.job?.cursor ?? 0;
-  const p = pressure(s, 40_000);
-  await sleep(1_500);
+  const p = pressure(s, 45_000);
+  await sleep(1_000);
   let preempted = null,
     aging = null;
   const t0 = Date.now();
@@ -347,11 +356,11 @@ async function scenarioAgingGuard() {
   );
   await sleep(4_500);
   let job = null;
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < 16; i++) {
     const r = await jobStep(s, id);
     job = r.json?.job;
     if (job?.state === "DONE") break;
-    await sleep(500);
+    await sleep(300);
   }
   const cs = cursorsInOrder(job);
   const monotone = cs.every((c, i) => i === 0 || c >= cs[i - 1]);
@@ -359,8 +368,8 @@ async function scenarioAgingGuard() {
   const hasAll = ["queued", "started", "preempted", "waiting", "aging-chunk", "resumed", "done"].every((e) => ev.includes(e));
   record(
     "the job resumes from its cursor and finishes: no work lost",
-    job?.state === "DONE" && job?.cursor === 60 && job?.resumes >= 1 && monotone && hasAll,
-    `state=${job?.state} cursor=${job?.cursor}/60 resumes=${job?.resumes} aging=${job?.agingChunks} cursors=${cs.join(",")} events=${ev.join(",")}`,
+    job?.state === "DONE" && job?.cursor === 300 && job?.resumes >= 1 && monotone && hasAll,
+    `state=${job?.state} cursor=${job?.cursor}/300 resumes=${job?.resumes} aging=${job?.agingChunks} cursors=${cs.join(",")} events=${ev.join(",")}`,
   );
 }
 

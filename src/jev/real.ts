@@ -12,7 +12,11 @@ function asJson(v: unknown): EntryType {
 
 export class JevDecider implements Decider {
   readonly kind = "jev" as const;
-  private readonly client = new TypeSafeClient({ timeout: JEV_BUDGET.timeoutMs, retry: { maxRetries: 0 } });
+
+  /** A fresh client per call reads the credential the runtime injected for this invocation. Construction is cheap. */
+  private get client(): TypeSafeClient {
+    return new TypeSafeClient({ timeout: JEV_BUDGET.timeoutMs, retry: { maxRetries: 0 } });
+  }
 
   private opts(signal?: AbortSignal) {
     return signal ? { signal, timeout: JEV_BUDGET.timeoutMs } : { timeout: JEV_BUDGET.timeoutMs };

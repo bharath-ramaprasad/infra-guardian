@@ -485,3 +485,41 @@ dialog {
 dialog::backdrop {
   background: rgba(0, 0, 0, 0.4);
 }
+
+.demo {
+  padding: 4px 24px 0;
+}
+.demo details {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 14px;
+}
+.demo summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+.demo summary::-webkit-details-marker {
+  display: none;
+}
+.demo summary::before {
+  content: "▶";
+  font-size: 12px;
+  color: var(--accent);
+}
+.demo details[open] summary::before {
+  content: "▼";
+}
+.demo video {
+  display: block;
+  width: 100%;
+  max-width: 960px;
+  margin: 12px auto 6px;
+  border-radius: 8px;
+  background: #000;
+  aspect-ratio: 16 / 10;
+}

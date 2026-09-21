@@ -2,7 +2,7 @@
 
 A circuit breaker, rate limiter, and batch preemptor whose _policy_ is advised by [TypeSafe Jev](https://typesafe.ai) and whose _guarantees_ are enforced by code. It degrades predictably under stress: one tier at a time, with every response explaining why.
 
-**Live demo:** https://infra-guardian.netlify.app — open it, type what a request is for, put the upstream under load, watch the ladder.
+**Live demo:** https://infra-guardian.netlify.app — open it, type what a request is for, put the upstream under load, watch the ladder. A narrated four-minute walkthrough of every flow, with Jev on and off, is embedded at the top of the page and downloadable as [infra-guardian-demo.mp4](https://infra-guardian.netlify.app/demo/infra-guardian-demo.mp4).
 
 Built for the Anthropic SWE take-home, theme 3 (systems and reliability). Design rationale: [docs/RATIONALE.md](docs/RATIONALE.md). Plan: [docs/PLAN.md](docs/PLAN.md). Architecture: [docs/control-plane.md](docs/control-plane.md), [docs/data-plane.md](docs/data-plane.md).
 
@@ -71,6 +71,8 @@ npm run e2e -- https://infra-guardian.netlify.app --only=aging   # one scenario 
 npm run dev           # netlify dev; JEV_FAKE=1 uses the keyword fake instead of Jev
 npm run deploy        # netlify deploy --prod
 ```
+
+The demo video is not committed (31 MB); it is produced by `npm run demo:record` and deployed with the site: Playwright drives the live site scene by scene, each narration line is synthesized with a neural voice (edge-tts) and padded to the exact time its on-screen actions took, and ffmpeg muxes and concatenates the clips. Re-record selected scenes with `--only=03,06`.
 
 Stack: Node 22, TypeScript, Netlify Functions v2 and Scheduled Functions, Netlify Blobs (strong reads, etag compare-and-set), `@typesafe-ai/sdk` through Netlify's AI Gateway. No framework on the page.
 

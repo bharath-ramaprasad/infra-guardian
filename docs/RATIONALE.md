@@ -65,7 +65,7 @@ invocation; quorum hedging (2 of 3) for correctness checks against divergent rep
 I used Claude Code in the desktop app for the whole project, and the transcript is submitted alongside. The way I
 worked it was design first, build second, and I kept the judgment calls with me.
 
-**Design before code.** The first two hours were a conversation, not a build. I asked for a plan, pushed on it, and
+**Design before code.** The first hour was a conversation, not a build. I asked for a plan, pushed on it, and
 had the architecture drawn as control-plane and data-plane diagrams before a single file existed. That is where most
 of the decisions below were made, and the plan became the spec the code was held to.
 
@@ -105,7 +105,9 @@ believing green until an independent run said so.
 
 ## Time spent
 
-About six hours wall-clock on 20 September 2026: roughly two hours of design conversation (plan, diagrams, scope),
-about three hours of build with the verification loop running against production, and the rest on the reviewer-facing
-work: the explanations, the job lifecycle view, the quality gates, and the narrated demo video. That is over the
-two-hour target and under the eight-hour limit; the extra time went into verification and explainability, on purpose.
+Under four hours of my own time on 20 September 2026: about one hour of design conversation (plan, diagrams, scope),
+and about two hours of build with the verification loop running against production, plus the reviewer-facing work
+that followed: the explanations, the job lifecycle view, the quality gates, and the narrated demo video. That counts
+the time I was at the desk directing, reviewing, and deciding; it does not count stretches where the model was running
+a deploy, a live test suite, or a recording while I was away. It is over the two-hour target and under the eight-hour
+limit, and the extra time went into verification and explainability on purpose.

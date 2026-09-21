@@ -388,29 +388,98 @@
     }
   }
 
+  const EV_LABEL = {
+    queued: "queued",
+    started: "started",
+    resumed: "resumed",
+    preempted: "preempted",
+    waiting: "waiting",
+    "aging-chunk": "aging chunk",
+    "chunk-failed": "chunk failed",
+    done: "done",
+    cancelled: "cancelled",
+    submitted: "submitted",
+  };
+  let dialogJobId = null;
+  function cursorOf(ev) {
+    const m = /cursor (\d+)/.exec(ev.detail || "");
+    return m ? m[1] : "";
+  }
+  function eventRows(history, limit) {
+    const rows = history.slice().reverse();
+    return (limit ? rows.slice(0, limit) : rows)
+      .map(
+        (ev) =>
+          `<tr><td>${new Date(ev.at).toLocaleTimeString()}</td><td class="ev ${escapeHtml(ev.event)}">${escapeHtml(EV_LABEL[ev.event] || ev.event)}</td><td>${cursorOf(ev)}</td><td>${escapeHtml(ev.detail || "")}</td></tr>`,
+      )
+      .join("");
+  }
+  function jobSummary(j) {
+    const dur = (j.finishedAt || Date.now()) - j.submittedAt;
+    return {
+      state: j.state,
+      progress: `${j.cursor}/${j.items} items (chunks of ${j.chunkSize})`,
+      deferability: `${j.deferability} of 4 · ${escapeHtml(j.deferabilityText || "")} · ${escapeHtml(j.deferabilityDecider)}${j.deferabilityConfidence ? ` conf ${fmt(j.deferabilityConfidence)}` : ""}`,
+      chunks: `${j.chunksDone} done, ${j.chunksFailed} failed, ${j.agingChunks} aging`,
+      "preempted / resumed": `${j.preemptions} / ${j.resumes}`,
+      elapsed: `${Math.round(dur / 1000)} s${j.finishedAt ? " (finished)" : ""}`,
+      waiting: j.waiting ? `${escapeHtml(j.waiting.reason)}: ${escapeHtml(j.waiting.detail)}` : undefined,
+    };
+  }
   function renderJobs(jobs) {
     if (!jobs.length) {
       $("jobs").innerHTML = `<p class="hint">No jobs yet.</p>`;
       return;
     }
+    const parked = jobs
+      .filter((j) => j.state === "QUEUED" || j.state === "PREEMPTED")
+      .sort((a, b) => a.deferability - b.deferability || a.submittedAt - b.submittedAt);
     $("jobs").innerHTML = jobs
       .slice()
       .reverse()
       .map((j) => {
         const pct = Math.round((j.cursor / j.items) * 100);
+        const order = parked.findIndex((p) => p.id === j.id);
         return `<div class="job">
-        <div><span class="st ${j.state}">${j.state}</span> · ${escapeHtml(j.description)} · deferability ${j.deferability}/4 (${escapeHtml(j.deferabilityDecider)}, conf ${fmt(j.deferabilityConfidence)})</div>
-        <div class="bar"><i style="width:${pct}%; background:${j.state === "PREEMPTED" ? "var(--bad)" : "var(--accent)"}"></i></div>
-        <div class="hint">${j.cursor}/${j.items} items · preempted ${j.preemptions}× · resumed ${j.resumes}× · last: ${escapeHtml(j.lastEvent ? j.lastEvent.event + (j.lastEvent.detail ? " (" + j.lastEvent.detail + ")" : "") : "-")}
-        ${j.state !== "DONE" && j.state !== "CANCELLED" ? `<button class="ghost" data-cancel="${j.id}" style="padding:2px 8px;font-size:12px;margin-left:8px">cancel</button>` : ""}</div>
+        <div><span class="st ${j.state}">${j.state}</span> · ${escapeHtml(j.description)}${order >= 0 && parked.length > 1 ? ` · resume order #${order + 1} of ${parked.length}` : ""}</div>
+        <div class="meta"><span>deferability <b>${j.deferability}/4</b> “${escapeHtml(j.deferabilityText || "")}” (${escapeHtml(j.deferabilityDecider)}${j.deferabilityConfidence ? `, conf ${fmt(j.deferabilityConfidence)}` : ""})</span></div>
+        <div class="bar"><i style="width:${pct}%; background:${j.state === "PREEMPTED" ? "var(--bad)" : j.state === "DONE" ? "var(--ok)" : "var(--accent)"}"></i></div>
+        <div class="meta"><span>${j.cursor}/${j.items} items</span><span>${j.chunksDone} chunks ok, ${j.chunksFailed} failed</span><span>preempted ${j.preemptions}×</span><span>resumed ${j.resumes}×</span><span>aging chunks ${j.agingChunks}</span></div>
+        ${j.waiting && (j.state === "QUEUED" || j.state === "PREEMPTED") ? `<div class="wait">Waiting (${escapeHtml(j.waiting.reason)}): ${escapeHtml(j.waiting.detail)}</div>` : ""}
+        <table class="events"><thead><tr><th>time</th><th>event</th><th>cursor</th><th>detail</th></tr></thead><tbody>${eventRows(j.history || [], 5)}</tbody></table>
+        <div class="row" style="margin:6px 0 0">
+          <button class="ghost" data-history="${j.id}" style="padding:2px 8px;font-size:12px">Full history (${(j.history || []).length})</button>
+          ${j.state !== "DONE" && j.state !== "CANCELLED" ? `<button class="ghost" data-cancel="${j.id}" style="padding:2px 8px;font-size:12px">cancel</button>` : ""}
+        </div>
       </div>`;
       })
       .join("");
     $("jobs")
       .querySelectorAll("[data-cancel]")
       .forEach((b) => b.addEventListener("click", () => fetch(`/api/jobs/${b.dataset.cancel}/cancel?${q()}`, { method: "POST" })));
+    $("jobs")
+      .querySelectorAll("[data-history]")
+      .forEach((b) =>
+        b.addEventListener("click", () => {
+          dialogJobId = b.dataset.history;
+          renderDialog(jobs);
+          $("jobDialog").showModal();
+        }),
+      );
+    if (dialogJobId && $("jobDialog").open) renderDialog(jobs);
     for (const j of jobs) if (j.state === "QUEUED" || j.state === "RUNNING" || j.state === "PREEMPTED") stepJob(j.id);
   }
+  function renderDialog(jobs) {
+    const j = jobs.find((x) => x.id === dialogJobId);
+    if (!j) return;
+    $("jdTitle").textContent = `${j.state} · ${j.description}`;
+    $("jdSummary").innerHTML = Object.entries(jobSummary(j))
+      .filter(([, v]) => v !== undefined)
+      .map(([k, v]) => `<b>${escapeHtml(k)}</b><span>${v}</span>`)
+      .join("");
+    $("jdTable").querySelector("tbody").innerHTML = eventRows(j.history || [], 0);
+  }
+  $("jdClose").addEventListener("click", () => $("jobDialog").close());
 
   // ---------- status polling ----------
   async function refreshStatus() {

@@ -1,6 +1,7 @@
 import type { Config, Context } from "@netlify/functions";
 import { randomBytes } from "node:crypto";
-import { BATCH_CFG, CONFIDENCE_GENERAL, clampTier, createJob, type DeciderTag, type Job } from "../../src/core";
+import { BATCH_CFG, CONFIDENCE_GENERAL, clampTier, createJob, noteQueued, type DeciderTag, type Job } from "../../src/core";
+import { QUESTIONS } from "../../src/jev";
 import { badRequest, descriptionOf, json, readJson, sessionId } from "../../src/http";
 import { addJobToIndex, consultJev, jobKey, listJobs, loadState, makeCtx, touchSession, updateState } from "../../src/service";
 
@@ -55,12 +56,24 @@ export default async (req: Request, _context: Context) => {
     return { value: { ...cur, jev: { ...jev, last, lastError }, updatedAt: t }, result: null };
   });
   const id = randomBytes(4).toString("hex");
-  const job: Job = {
-    ...createJob(id, description, items, now),
-    deferability,
-    deferabilityConfidence: confidence,
-    deferabilityDecider: decider,
-  };
+  const deferabilityText = QUESTIONS.deferability.criteria[deferability as 0 | 1 | 2 | 3 | 4];
+  const why =
+    decider === "jev"
+      ? `Jev scored deferability ${deferability} of 4 (confidence ${confidence.toFixed(2)}): "${deferabilityText}". Lower resumes first when pressure clears.`
+      : decider === "jev-bypassed-lowconf"
+        ? `Jev's confidence ${confidence.toFixed(2)} was below 0.6, so deferability defaults to 2 of 4: "${deferabilityText}".`
+        : `Jev was not consulted (${decider}), so deferability defaults to 2 of 4: "${deferabilityText}".`;
+  const job: Job = noteQueued(
+    {
+      ...createJob(id, description, items, now),
+      deferability,
+      deferabilityConfidence: confidence,
+      deferabilityDecider: decider,
+      deferabilityText,
+    },
+    now,
+    `${items} items in chunks of ${BATCH_CFG.chunkSize}. ${why}`,
+  );
   await ctx.store.set(jobKey(sid, id), job, { onlyIfNew: true });
   await addJobToIndex(ctx, id);
   await touchSession(ctx, now);

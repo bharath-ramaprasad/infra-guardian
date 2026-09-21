@@ -216,6 +216,154 @@ async function scenarioPreemption() {
   );
 }
 
+// Critical bursts every 1.5 s keep the yield flag raised; the description is warmed first so Jev is called once.
+function pressure(s, ms) {
+  let on = true;
+  const done = (async () => {
+    await protectedReq(s, "customer waiting at checkout to confirm the order", "&latency=20", { idempotencyKey: "warm" });
+    const t0 = Date.now();
+    while (on && Date.now() - t0 < ms) {
+      await Promise.all(
+        Array.from({ length: 14 }, (_, i) =>
+          protectedReq(s, "customer waiting at checkout to confirm the order", "&latency=20", { idempotencyKey: `p-${Date.now()}-${i}` }),
+        ),
+      );
+      await sleep(600);
+    }
+  })();
+  return {
+    stop: () => {
+      on = false;
+      return done;
+    },
+  };
+}
+
+const jobStep = (s, id) => call(`/api/jobs/${id}/step?s=${s}&latency=60`, { method: "POST" });
+const events = (job) => (job?.history ?? []).map((h) => h.event);
+const cursorsInOrder = (job) =>
+  (job?.history ?? [])
+    .map((h) => /cursor (\d+)/.exec(h.detail ?? ""))
+    .filter(Boolean)
+    .map((m) => Number(m[1]));
+
+async function scenarioJobLifecycle() {
+  const s = sid("jobs");
+  const urgent = await call(`/api/jobs?s=${s}`, {
+    method: "POST",
+    body: { description: "the customer is on the phone waiting for this report right now", items: 40 },
+  });
+  const lazy = await call(`/api/jobs?s=${s}`, {
+    method: "POST",
+    body: { description: "weekly archive export, unattended, whenever is fine", items: 40 },
+  });
+  const uj = urgent.json?.job,
+    lj = lazy.json?.job;
+  const jevScored = uj?.deferabilityDecider === "jev" && lj?.deferabilityDecider === "jev";
+  const ordered = jevScored ? uj.deferability < lj.deferability : true;
+  record(
+    "Jev scores deferability and the queued event explains it",
+    Boolean(uj && lj) && ordered && events(uj)[0] === "queued" && /deferability \d of 4/.test(uj.history?.[0]?.detail ?? ""),
+    `urgent=${uj?.deferability} "${uj?.deferabilityText}" (${uj?.deferabilityDecider}) | lazy=${lj?.deferability} "${lj?.deferabilityText}" (${lj?.deferabilityDecider}) | queued: ${uj?.history?.[0]?.detail?.slice(0, 90)}${jevScored ? "" : " | NOTE: Jev did not score both, order not asserted"}`,
+  );
+  const step = await jobStep(s, uj.id);
+  const started = step.json?.job?.history?.find((h) => h.event === "started");
+  record(
+    "a job submitted while calm starts at once and says why",
+    step.json?.job?.state === "RUNNING" && Boolean(started) && /tier 0 NORMAL/.test(started?.detail ?? ""),
+    `state=${step.json?.job?.state} started="${started?.detail?.slice(0, 100)}"`,
+  );
+}
+
+async function scenarioSubmitUnderPressure() {
+  const s = sid("queue");
+  const p = pressure(s, 12_000);
+  await sleep(2_500);
+  const created = await call(`/api/jobs?s=${s}`, {
+    method: "POST",
+    body: { description: "nightly analytics export, unattended", items: 40 },
+  });
+  const id = created.json?.job?.id;
+  const step1 = await jobStep(s, id);
+  const st = await status(s);
+  const waiting = step1.json?.job?.waiting;
+  record(
+    "a job submitted during a critical burst stays queued with the reason",
+    step1.json?.job?.state === "QUEUED" && waiting?.reason === "yield" && step1.json?.job?.cursor === 0,
+    `state=${step1.json?.job?.state} yieldActive=${st.json?.yieldActive} waiting=${waiting?.reason}: ${waiting?.detail?.slice(0, 80)} stop=${step1.json?.step?.stopReason}`,
+  );
+  await p.stop();
+  await sleep(4_000);
+  const step2 = await jobStep(s, id);
+  const started = step2.json?.job?.history?.find((h) => h.event === "started");
+  record(
+    "it starts once the burst ends, from cursor 0",
+    step2.json?.job?.state === "RUNNING" && step2.json?.job?.cursor > 0 && Boolean(started),
+    `state=${step2.json?.job?.state} cursor=${step2.json?.job?.cursor} events=${events(step2.json?.job).join(",")}`,
+  );
+}
+
+async function scenarioAgingGuard() {
+  const s = sid("aging");
+  const created = await call(`/api/jobs?s=${s}`, {
+    method: "POST",
+    body: { description: "nightly analytics export, unattended", items: 60 },
+  });
+  const id = created.json?.job?.id;
+  const first = await jobStep(s, id);
+  const c1 = first.json?.job?.cursor ?? 0;
+  const p = pressure(s, 40_000);
+  await sleep(1_500);
+  let preempted = null,
+    aging = null;
+  const t0 = Date.now();
+  while (Date.now() - t0 < 30_000) {
+    const r = await jobStep(s, id);
+    const j = r.json?.job;
+    if (!preempted && j?.state === "PREEMPTED") preempted = { cursor: j.cursor, stop: r.json?.step?.stopReason };
+    if (r.json?.step?.stopReason === "aging-chunk") {
+      aging = {
+        cursor: j.cursor,
+        agingChunks: j.agingChunks,
+        detail: j.history
+          ?.slice()
+          .reverse()
+          .find((h) => h.event === "aging-chunk")?.detail,
+      };
+      break;
+    }
+    await sleep(2_000);
+  }
+  await p.stop();
+  record(
+    "sustained critical pressure preempts the job and parks it",
+    Boolean(preempted) && preempted.cursor === c1,
+    `first cursor=${c1} preempted=${JSON.stringify(preempted)}`,
+  );
+  record(
+    "aging guard grants one chunk after 10 s without progress under pressure",
+    Boolean(aging) && aging.cursor === c1 + 5 && aging.agingChunks >= 1,
+    `aging=${JSON.stringify(aging)?.slice(0, 220)}`,
+  );
+  await sleep(4_500);
+  let job = null;
+  for (let i = 0; i < 12; i++) {
+    const r = await jobStep(s, id);
+    job = r.json?.job;
+    if (job?.state === "DONE") break;
+    await sleep(500);
+  }
+  const cs = cursorsInOrder(job);
+  const monotone = cs.every((c, i) => i === 0 || c >= cs[i - 1]);
+  const ev = events(job);
+  const hasAll = ["queued", "started", "preempted", "waiting", "aging-chunk", "resumed", "done"].every((e) => ev.includes(e));
+  record(
+    "the job resumes from its cursor and finishes: no work lost",
+    job?.state === "DONE" && job?.cursor === 60 && job?.resumes >= 1 && monotone && hasAll,
+    `state=${job?.state} cursor=${job?.cursor}/60 resumes=${job?.resumes} aging=${job?.agingChunks} cursors=${cs.join(",")} events=${ev.join(",")}`,
+  );
+}
+
 async function scenarioHedge() {
   const s = sid("hedge");
   const hedges = [];
@@ -253,6 +401,9 @@ await scenarioClassification();
 await scenarioHedge();
 await scenarioJevOff();
 await scenarioPreemption();
+await scenarioJobLifecycle();
+await scenarioSubmitUnderPressure();
+await scenarioAgingGuard();
 await scenarioLadderAndBreaker();
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);

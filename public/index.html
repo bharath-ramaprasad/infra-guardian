@@ -74,7 +74,15 @@
         <button id="submitJob">Submit job</button>
       </div>
       <div id="jobs"></div>
+      <p class="hint" style="margin-top:10px">Lifecycle: <b>queued</b> (Jev scores deferability) → <b>started</b> when pressure is clear → <b>preempted</b> at a chunk boundary when the tier is HARD_THROTTLE or above, the critical pool dips under its reserve, or a critical request raises the yield flag → <b>waiting</b> with the reason → <b>aging-chunk</b> after 10 s without progress under pressure → <b>resumed</b> from the saved cursor → <b>done</b>. Try: submit a job, then run the checkout stream at 15/s.</p>
     </section>
+
+    <dialog id="jobDialog">
+      <div class="dhead"><span id="jdTitle"></span><button id="jdClose" class="ghost">Close</button></div>
+      <div id="jdSummary" class="kv small"></div>
+      <h3>Full history</h3>
+      <table class="events" id="jdTable"><thead><tr><th>time</th><th>event</th><th>cursor</th><th>detail</th></tr></thead><tbody></tbody></table>
+    </dialog>
 
     <section class="card">
       <h2>4. Why</h2>

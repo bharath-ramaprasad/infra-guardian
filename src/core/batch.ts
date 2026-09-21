@@ -1,6 +1,7 @@
 import {
   BATCH_CFG,
   CRITICAL_RESERVE_SHARE,
+  TIER_NAMES,
   WINDOW_MS,
   YIELD_TTL_MS,
   poolCapacity,
@@ -52,61 +53,162 @@ export function createJob(id: string, description: string, items: number, now: n
     deferability: 2,
     deferabilityConfidence: 0,
     deferabilityDecider: "deterministic",
+    deferabilityText: "",
     submittedAt: now,
+    startedAt: null,
+    finishedAt: null,
     resumeAfter: null,
     lastChunkAt: null,
     resumes: 0,
     preemptions: 0,
-    history: [{ at: now, event: "submitted" }],
+    agingChunks: 0,
+    chunksDone: 0,
+    chunksFailed: 0,
+    waiting: null,
+    history: [],
     updatedAt: now,
   };
 }
 
+/** One line on what the guard sees right now, used in job events so a reviewer can read why. */
+export function pressureDetail(state: ServiceState, now: number): string {
+  const cap = poolCapacity(state.tier, "critical");
+  const reserve = Math.max(1, cap * CRITICAL_RESERVE_SHARE);
+  const parts = [
+    `tier ${state.tier} ${TIER_NAMES[state.tier]}`,
+    `critical pool ${state.pools.critical.toFixed(1)}/${cap} (reserve ${reserve})`,
+  ];
+  if (state.yieldRequestedAt !== null && yieldActive(state, now))
+    parts.push(`yield flag raised ${((now - state.yieldRequestedAt) / 1000).toFixed(1)} s ago by a critical request`);
+  else parts.push("no yield flag");
+  return parts.join(", ");
+}
+
+export function reasonText(reason: PreemptReason, state: ServiceState): string {
+  switch (reason) {
+    case "tier":
+      return `tier ${state.tier} ${TIER_NAMES[state.tier]} is HARD_THROTTLE or above, batch gets 0 chunks/s`;
+    case "critical-reserve":
+      return `critical pool ${state.pools.critical.toFixed(1)} is under its ${Math.round(CRITICAL_RESERVE_SHARE * 100)}% reserve, critical requests need the headroom`;
+    case "yield":
+      return "a critical request could not be admitted promptly and raised the yield flag";
+  }
+}
+
 function withEvent(job: Job, ev: JobEvent): Job {
   const history = [...job.history, ev];
-  return { ...job, history: history.length > 40 ? history.slice(history.length - 40) : history, updatedAt: ev.at };
+  return { ...job, history: history.length > 60 ? history.slice(history.length - 60) : history, updatedAt: ev.at };
+}
+
+export function noteQueued(job: Job, now: number, detail: string): Job {
+  return withEvent(job, { at: now, event: "queued", detail });
+}
+
+/** Record why a parked job is still parked. Only writes when the reason changes so polling does not spam history. */
+export function noteWaiting(job: Job, now: number, reason: string, detail: string): Job {
+  if (job.waiting && job.waiting.reason === reason) return job;
+  const next: Job = { ...job, waiting: { at: now, reason, detail } };
+  return withEvent(next, { at: now, event: "waiting", detail: `${reason}: ${detail}` });
+}
+
+export interface BatchAdmission {
+  readonly run: boolean;
+  readonly aging: boolean;
+  readonly reason: PreemptReason | "resume-wait" | "done" | "cancelled" | null;
+  readonly detail: string;
 }
 
 /** Decide whether this job may process a chunk right now, and whether it is an aging-guard chunk. */
-export function admission(
-  job: Job,
-  state: ServiceState,
-  now: number,
-): { run: boolean; aging: boolean; reason: PreemptReason | "resume-wait" | "done" | "cancelled" | null } {
-  if (job.state === "DONE") return { run: false, aging: false, reason: "done" };
-  if (job.state === "CANCELLED") return { run: false, aging: false, reason: "cancelled" };
+export function admission(job: Job, state: ServiceState, now: number): BatchAdmission {
+  if (job.state === "DONE") return { run: false, aging: false, reason: "done", detail: "job is complete" };
+  if (job.state === "CANCELLED") return { run: false, aging: false, reason: "cancelled", detail: "job was cancelled" };
   const reason = preemptReason(state, now);
+  const seen = pressureDetail(state, now);
   if (reason === null) {
-    if (job.state === "RUNNING") return { run: true, aging: false, reason: null };
-    // QUEUED or PREEMPTED: resume only when pressure has been clear for a full window (QUEUED may start at once).
+    if (job.state === "RUNNING") return { run: true, aging: false, reason: null, detail: seen };
     if (job.state === "QUEUED" || pressureClear(state, now)) {
-      if (job.resumeAfter !== null && now < job.resumeAfter) return { run: false, aging: false, reason: "resume-wait" };
-      return { run: true, aging: false, reason: null };
+      if (job.resumeAfter !== null && now < job.resumeAfter) {
+        return {
+          run: false,
+          aging: false,
+          reason: "resume-wait",
+          detail: `resume stagger, ${job.resumeAfter - now} ms left so parked jobs do not all restart at once`,
+        };
+      }
+      return { run: true, aging: false, reason: null, detail: seen };
     }
-    return { run: false, aging: false, reason: "resume-wait" };
+    const calmFor = ((now - state.tierChangedAt) / 1000).toFixed(1);
+    return {
+      run: false,
+      aging: false,
+      reason: "resume-wait",
+      detail: `pressure clear but only for ${calmFor} s at ${TIER_NAMES[state.tier]}; a full ${WINDOW_MS / 1000} s window is required before resuming`,
+    };
   }
-  // Under pressure: the aging guard grants one chunk unless the breaker is open.
-  if (state.tier < 4 && agingDue(job, now)) return { run: true, aging: true, reason: null };
-  return { run: false, aging: false, reason };
+  if (state.tier < 4 && agingDue(job, now)) {
+    const idle = ((now - (job.lastChunkAt ?? job.submittedAt)) / 1000).toFixed(0);
+    return {
+      run: true,
+      aging: true,
+      reason: null,
+      detail: `aging guard: ${idle} s without progress under pressure (${reasonText(reason, state)}); one chunk granted so the job cannot starve`,
+    };
+  }
+  return { run: false, aging: false, reason, detail: reasonText(reason, state) };
 }
 
-export function markRunning(job: Job, now: number, resumed: boolean): Job {
-  const next: Job = { ...job, state: "RUNNING", resumeAfter: null, resumes: resumed ? job.resumes + 1 : job.resumes };
-  return withEvent(next, { at: now, event: resumed ? "resumed" : "started", detail: `cursor ${job.cursor}` });
+export function markRunning(job: Job, now: number, resumed: boolean, detail: string): Job {
+  const next: Job = {
+    ...job,
+    state: "RUNNING",
+    resumeAfter: null,
+    waiting: null,
+    startedAt: job.startedAt ?? now,
+    resumes: resumed ? job.resumes + 1 : job.resumes,
+  };
+  return withEvent(next, { at: now, event: resumed ? "resumed" : "started", detail: `at cursor ${job.cursor}; ${detail}` });
 }
 
-export function preempt(job: Job, now: number, reason: PreemptReason, stagger: number): Job {
-  const resumeAfter = now + Math.floor(Math.max(0, Math.min(1, stagger)) * BATCH_CFG.resumeStaggerMaxMs);
-  const next: Job = { ...job, state: "PREEMPTED", resumeAfter, preemptions: job.preemptions + 1 };
-  return withEvent(next, { at: now, event: "preempted", detail: `${reason} at cursor ${job.cursor}` });
+export function preempt(job: Job, now: number, reason: PreemptReason, stagger: number, detail: string): Job {
+  const staggerMs = Math.floor(Math.max(0, Math.min(1, stagger)) * BATCH_CFG.resumeStaggerMaxMs);
+  const next: Job = { ...job, state: "PREEMPTED", resumeAfter: now + staggerMs, waiting: null, preemptions: job.preemptions + 1 };
+  return withEvent(next, {
+    at: now,
+    event: "preempted",
+    detail: `at cursor ${job.cursor}: ${detail}; will resume from here once pressure is clear for a full window (+${staggerMs} ms stagger)`,
+  });
 }
 
-export function advanceCursor(job: Job, processed: number, now: number, aging: boolean): Job {
+export function advanceCursor(job: Job, processed: number, now: number, aging: boolean, detail = ""): Job {
   const cursor = Math.min(job.items, job.cursor + Math.max(0, processed));
   const done = cursor >= job.items;
-  const next: Job = { ...job, cursor, lastChunkAt: now, state: done ? "DONE" : job.state, updatedAt: now };
-  if (done) return withEvent(next, { at: now, event: "done" });
-  return aging ? withEvent(next, { at: now, event: "aging-chunk", detail: `cursor ${cursor}` }) : next;
+  const failed = processed <= 0;
+  const next: Job = {
+    ...job,
+    cursor,
+    lastChunkAt: now,
+    state: done ? "DONE" : job.state,
+    finishedAt: done ? now : job.finishedAt,
+    chunksDone: job.chunksDone + (failed ? 0 : 1),
+    chunksFailed: job.chunksFailed + (failed ? 1 : 0),
+    agingChunks: job.agingChunks + (aging ? 1 : 0),
+    updatedAt: now,
+  };
+  let out = next;
+  if (failed)
+    out = withEvent(out, {
+      at: now,
+      event: "chunk-failed",
+      detail: `upstream failed, cursor stays at ${cursor}; the chunk will be retried`,
+    });
+  if (aging) out = withEvent(out, { at: now, event: "aging-chunk", detail: `${detail}; cursor ${job.cursor} → ${cursor}` });
+  if (done)
+    out = withEvent(out, {
+      at: now,
+      event: "done",
+      detail: `${cursor}/${job.items} items, ${job.preemptions} preemption(s), ${job.resumes} resume(s), ${job.agingChunks + (aging ? 1 : 0)} aging chunk(s)`,
+    });
+  return out;
 }
 
 export function cancel(job: Job, now: number): Job {

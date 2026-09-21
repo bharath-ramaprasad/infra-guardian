@@ -91,6 +91,11 @@ flowchart TB
   MORE -->|no| SAVE --> DONE
 ```
 
+Every transition is written to the job's history with its reason and cursor: `queued` (deferability rubric and decider),
+`started` / `resumed` (what the guard saw: tier, critical pool, yield flag), `preempted` (which signal, cursor, stagger),
+`waiting` (recorded once per reason change, not per poll), `aging-chunk` (seconds without progress), `chunk-failed`, `done`.
+The status endpoint returns the history and the page renders it per job with a full-history modal.
+
 ## 4. Storage layout per session namespace
 
 All keys are prefixed by the visitor's session id, so reviewers never see each other's stress. Writes use

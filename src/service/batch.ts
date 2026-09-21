@@ -4,6 +4,7 @@ import {
   advanceCursor,
   chunksPerStep,
   markRunning,
+  noteWaiting,
   preempt,
   tierSpec,
   type Job,
@@ -53,24 +54,32 @@ export async function stepJob(ctx: Ctx, id: string, params: UpstreamParams, budg
     if (!a.run) {
       if (job.state === "RUNNING" && (a.reason === "tier" || a.reason === "critical-reserve" || a.reason === "yield")) {
         const reason = a.reason;
-        job = (await updateJob(ctx, id, (j) => preempt(j, now, reason, Math.random()))) ?? job;
+        const detail = a.detail;
+        job = (await updateJob(ctx, id, (j) => preempt(j, now, reason, Math.random(), detail))) ?? job;
         console.info(JSON.stringify({ event: "job.preempted", sid: ctx.sid, id, reason, cursor: job.cursor }));
         stopReason = `preempted:${reason}`;
+      } else if (a.reason !== "done" && a.reason !== "cancelled") {
+        const reason = a.reason ?? "parked";
+        const detail = a.detail;
+        job = (await updateJob(ctx, id, (j) => noteWaiting(j, now, reason, detail))) ?? job;
+        stopReason = reason;
       } else {
-        stopReason = a.reason ?? "parked";
+        stopReason = a.reason;
       }
       break;
     }
     if (job.state !== "RUNNING") {
       const resumed = job.state === "PREEMPTED";
-      job = (await updateJob(ctx, id, (j) => markRunning(j, now, resumed))) ?? job;
+      const detail = a.detail;
+      job = (await updateJob(ctx, id, (j) => markRunning(j, now, resumed, detail))) ?? job;
     }
     const chunkStart = Date.now();
     const r = await callUpstream({ ...params, latency: Math.min(params.latency, BATCH_CFG.chunkMs) });
     outcomes.push({ ok: r.ok, latencyMs: Date.now() - chunkStart, timeout: r.timeout, at: Date.now() });
     const processed = r.ok ? job.chunkSize : 0;
     const aging = a.aging;
-    job = (await updateJob(ctx, id, (j) => advanceCursor(j, processed, Date.now(), aging))) ?? job;
+    const agingDetail = a.detail;
+    job = (await updateJob(ctx, id, (j) => advanceCursor(j, processed, Date.now(), aging, agingDetail))) ?? job;
     chunks++;
     if (aging) {
       stopReason = "aging-chunk";

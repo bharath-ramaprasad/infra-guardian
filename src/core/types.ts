@@ -159,6 +159,12 @@ export interface JobEvent {
   readonly detail?: string;
 }
 
+export interface JobWaiting {
+  readonly at: number;
+  readonly reason: string;
+  readonly detail: string;
+}
+
 export interface Job {
   readonly id: string;
   readonly description: string;
@@ -169,11 +175,18 @@ export interface Job {
   readonly deferability: number;
   readonly deferabilityConfidence: number;
   readonly deferabilityDecider: DeciderTag;
+  readonly deferabilityText: string;
   readonly submittedAt: number;
+  readonly startedAt: number | null;
+  readonly finishedAt: number | null;
   readonly resumeAfter: number | null;
   readonly lastChunkAt: number | null;
   readonly resumes: number;
   readonly preemptions: number;
+  readonly agingChunks: number;
+  readonly chunksDone: number;
+  readonly chunksFailed: number;
+  readonly waiting: JobWaiting | null;
   readonly history: readonly JobEvent[];
   readonly updatedAt: number;
 }

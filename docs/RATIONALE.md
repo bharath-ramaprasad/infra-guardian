@@ -1,6 +1,6 @@
 # Design rationale
 
-> Draft written with Claude Code from the design conversation. Sections marked **[owner]** need Bharath's own words and numbers before submission.
+> Written with Claude Code from the design conversation and reviewed by the owner.
 
 ## Why this theme and this approach
 
@@ -60,10 +60,52 @@ live queue when ordering resumes, not just the description at submission.
 Smaller items on the same path: move the OPEN fail-fast branch to an edge function so an open breaker costs no
 invocation; quorum hedging (2 of 3) for correctness checks against divergent replicas.
 
-## How AI was used **[owner]**
+## How AI was used
 
-The plan, diagrams, code, tests, and this draft were produced with Claude Code across one session; the transcript is submitted alongside. The decisions above that were mine rather than the model's: choosing Jev as the policy layer instead of a generic LLM; insisting that batch work be preempted rather than dropped; adding hedged requests for the critical class; cutting scale to keep the prototype demoable; and pushing back on the initial two-hour estimate. **[owner: adjust, add what you overrode or rejected]**
+I used Claude Code in the desktop app for the whole project, and the transcript is submitted alongside. The way I
+worked it was design first, build second, and I kept the judgment calls with me.
 
-## Time spent **[owner]**
+**Design before code.** The first two hours were a conversation, not a build. I asked for a plan, pushed on it, and
+had the architecture drawn as control-plane and data-plane diagrams before a single file existed. That is where most
+of the decisions below were made, and the plan became the spec the code was held to.
 
-Approximately **[owner: fill in]** hours, including design, build, deploy, and end-to-end testing against the live site.
+**An autonomous verification loop, by policy.** I wrote the working agreement (`CLAUDE.md`) so that after every change
+the model runs typecheck, lint, format, and tests, and after every deploy an *independent* agent runs the live
+end-to-end suite and reports evidence, not the agent that made the change. I did not accept "done" without that
+report. The loop found the bugs that mattered: a cached Blobs client whose token expired on warm instances, a cached
+Jev client that started answering 401 the same way, a classification stampede under bursts, a hedge that fired on
+ordinary requests, and an evaluation window that missed paused bursts. Several of those only appear on a warm
+production instance; unit tests would never have caught them.
+
+**Decisions that were mine, not the model's:**
+
+- Building on Jev at all. The model initially did not know what Jev was; I pointed it at TypeSafe and required a
+  platform with Jev on a free tier. The framing "Jev advises, code decides" came out of that conversation and I kept
+  the model to it.
+- Preempting batch work instead of dropping it. The model first argued against preemption; I clarified I meant
+  chunked batch jobs, not HTTP calls, and that reframing produced the checkpoint-and-yield design and the aging guard.
+- Hedged requests for the critical class. I proposed it (as "anycast"; the model corrected the term and added the
+  four gates so it cannot amplify a slowdown).
+- Cutting scale to keep the prototype demoable, and rejecting the model's claim that my scope was too big for the
+  time; I dropped only two items.
+- Per-request reasoning as a first-class feature: the details card, the plain-language `why` on every response, and
+  the job lifecycle table with reasons. I asked for these after seeing the first working version; the model had
+  stopped at headers.
+- Package structure, lint and format gates, and a narrated demo with every capability shown with and without Jev.
+
+**Decisions the model made on its own that I reviewed and kept:** the Jev timeout at 800 ms after measuring gateway
+latency; treating the safe-to-retry answer as a veto at 0.7 rather than a grant at 0.9, after measuring what Jev
+actually scores for read-only fetches versus card charges; and reshaping one demo scene when the recording showed
+that with Jev off there is no critical class, so the honest demonstration is tier-driven preemption.
+
+**What I would tell someone doing this.** Make the model write the plan and the invariants first, put the
+verification policy in the repo so it cannot be skipped, and insist that verification be done by a different agent
+with evidence. The model is very good at the build; the value I added was in what to build, what not to, and not
+believing green until an independent run said so.
+
+## Time spent
+
+About six hours wall-clock on 20 September 2026: roughly two hours of design conversation (plan, diagrams, scope),
+about three hours of build with the verification loop running against production, and the rest on the reviewer-facing
+work: the explanations, the job lifecycle view, the quality gates, and the narrated demo video. That is over the
+two-hour target and under the eight-hour limit; the extra time went into verification and explainability, on purpose.

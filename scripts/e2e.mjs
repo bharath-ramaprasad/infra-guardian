@@ -4,7 +4,7 @@
 
 const base = (process.argv[2] ?? process.env.E2E_URL ?? "").replace(/\/$/, "");
 if (!base) {
-  console.error("usage: node scripts/e2e.mjs <base url>");
+  console.error("usage: node scripts/e2e.mjs <base url> [--only=<scenario substring>]");
   process.exit(2);
 }
 const results = [];
@@ -345,13 +345,15 @@ async function scenarioAgingGuard() {
   }
   await p.stop();
   record(
-    "sustained critical pressure preempts the job and parks it",
-    Boolean(preempted) && preempted.cursor === c1,
+    "sustained critical pressure preempts the job and parks it at a chunk boundary",
+    Boolean(preempted) && preempted.cursor >= c1 && preempted.cursor % 5 === 0 && preempted.stop === "preempted:yield",
     `first cursor=${c1} preempted=${JSON.stringify(preempted)}`,
   );
+  const agingMove = /cursor (\d+) → (\d+)/.exec(aging?.detail ?? "");
+  const oneChunk = agingMove ? Number(agingMove[2]) - Number(agingMove[1]) === 5 && Number(agingMove[2]) === aging.cursor : false;
   record(
-    "aging guard grants one chunk after 10 s without progress under pressure",
-    Boolean(aging) && aging.cursor === c1 + 5 && aging.agingChunks >= 1,
+    "aging guard grants exactly one chunk after 10 s without progress under pressure",
+    Boolean(aging) && aging.agingChunks >= 1 && oneChunk && /\d+ s without progress/.test(aging.detail ?? ""),
     `aging=${JSON.stringify(aging)?.slice(0, 220)}`,
   );
   await sleep(4_500);
@@ -403,17 +405,24 @@ async function scenarioJevOff() {
   );
 }
 
-console.log(`e2e against ${base}`);
-await scenarioStatus();
-await scenarioHeaders();
-await scenarioClassification();
-await scenarioHedge();
-await scenarioJevOff();
-await scenarioPreemption();
-await scenarioJobLifecycle();
-await scenarioSubmitUnderPressure();
-await scenarioAgingGuard();
-await scenarioLadderAndBreaker();
+const only = (process.argv[3] ?? "").replace(/^--only=/, "");
+const scenarios = [
+  ["status", scenarioStatus],
+  ["headers", scenarioHeaders],
+  ["classification", scenarioClassification],
+  ["hedge", scenarioHedge],
+  ["jevoff", scenarioJevOff],
+  ["preemption", scenarioPreemption],
+  ["jobs", scenarioJobLifecycle],
+  ["queue", scenarioSubmitUnderPressure],
+  ["aging", scenarioAgingGuard],
+  ["ladder", scenarioLadderAndBreaker],
+];
+console.log(`e2e against ${base}${only ? ` (only: ${only})` : ""}`);
+for (const [name, fn] of scenarios) {
+  if (only && !name.includes(only)) continue;
+  await fn();
+}
 const failed = results.filter((r) => !r.pass);
 console.log(`\n${results.length - failed.length}/${results.length} passed`);
 process.exit(failed.length ? 1 : 0);

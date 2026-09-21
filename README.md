@@ -66,7 +66,8 @@ curl -s -X POST "$U/api/reset?s=$S&jev=off" | jq
 ```bash
 npm install
 npm run check         # typecheck + lint + format + 36 unit and property tests (fast-check for the invariants)
-npm run e2e -- https://infra-guardian.netlify.app   # live scenarios: ladder, breaker, recovery, preemption, hedging, jev-off
+npm run e2e -- https://infra-guardian.netlify.app   # 19 live scenarios: ladder, breaker, recovery, preemption, aging guard, hedging, jev-off
+npm run e2e -- https://infra-guardian.netlify.app --only=aging   # one scenario group
 npm run dev           # netlify dev; JEV_FAKE=1 uses the keyword fake instead of Jev
 npm run deploy        # netlify deploy --prod
 ```

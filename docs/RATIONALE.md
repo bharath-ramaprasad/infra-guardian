@@ -105,8 +105,8 @@ believing green until an independent run said so.
 
 ## Time spent
 
-Under four hours of my own time on 20 September 2026: about one hour of design conversation (plan, diagrams, scope),
-and about two hours of build with the verification loop running against production, plus the reviewer-facing work
+It took about 3 hours of my time on 20 September 2026: about one hour of design conversation (plan, diagrams, scope),
+and about two hours of implementing, building with the verification loop running against production, plus the reviewer-facing work
 that followed: the explanations, the job lifecycle view, the quality gates, and the narrated demo video. That counts
 the time I was at the desk directing, reviewing, and deciding; it does not count stretches where the model was running
 a deploy, a live test suite, or a recording while I was away. It is over the two-hour target and under the eight-hour
